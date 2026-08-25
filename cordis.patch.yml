@@ -1,0 +1,14 @@
+# Mount the Hindsight memory bridge into a DSH profile.
+# The plugin itself registers /hindsight commands + model tools; this patch
+# layer injects the default config row so one-field overrides (endpoint,
+# bankId, token) can come from user settings or environment variables.
+- insert:
+    - id: hindsight
+      name: dsh-hindsight
+      config:
+        endpoint: http://localhost:8888
+        token: ''
+        bankId: hermes
+        defaultRecallLimit: 10
+        requestTimeoutMs: 15000
+        healthTimeoutMs: 5000

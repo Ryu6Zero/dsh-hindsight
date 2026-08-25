@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build & typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+      # Privacy audit as a hard gate: publishing a tarball containing dev paths
+      # or a real token is a release-blocking defect.
+      - name: Privacy audit
+        run: |
+          if grep -rn "/Users/" lib/ ; then echo "FAIL: build embeds developer paths"; exit 1; fi
+          if grep -rniE "sk-ant-|sk-proj-|AIza|AKIA[0-9A-Z]{16}|OPENAI_API_KEY|ANTHROPIC_API_KEY" lib/ ; then echo "FAIL: secret pattern in build"; exit 1; fi
+          echo "privacy audit clean"
+      - name: Verify package contents
+        run: |
+          PACK=$(npm pack --dry-run 2>&1)
+          echo "$PACK"
+          for f in lib/index.js lib/index.d.ts cordis.patch.yml README.md LICENSE; do
+            echo "$PACK" | grep -q "$f" || { echo "FAIL: $f not in package"; exit 1; }
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: dsh-hindsight-*.tgz
+
+  publish-npm:
+    name: Publish to npm
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Publish
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

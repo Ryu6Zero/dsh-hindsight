@@ -1,0 +1,10 @@
+node_modules/
+coverage/
+lib/
+*.log
+.DS_Store
+*.tgz
+
+# Local IDE settings
+/.idea/
+/.vscode/

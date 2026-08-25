@@ -1,0 +1,18 @@
+packages:
+  - .
+
+allowBuilds:
+  '@deepseek-ai/dsh-subprocess-local': set this to true or false
+  '@google/genai': set this to true or false
+  koffi: set this to true or false
+  node-pty: set this to true or false
+  protobufjs: set this to true or false
+
+# DSH runtime native addons are built by the dsh profile's own pnpm install,
+# not by this library's build. Approve them here so `pnpm install` is silent.
+onlyBuiltDependencies:
+  - '@deepseek-ai/dsh-subprocess-local'
+  - '@google/genai'
+  - koffi
+  - node-pty
+  - protobufjs
