@@ -20,11 +20,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Ryu6Zero/dsh-hindsight.git"
+    "url": "git+https://github.com/Ryu6Zero/DSHHindsight.git"
   },
-  "homepage": "https://github.com/Ryu6Zero/dsh-hindsight#readme",
+  "homepage": "https://github.com/Ryu6Zero/DSHHindsight#readme",
   "bugs": {
-    "url": "https://github.com/Ryu6Zero/dsh-hindsight/issues"
+    "url": "https://github.com/Ryu6Zero/DSHHindsight/issues"
   },
   "license": "MIT",
   "publishConfig": {
