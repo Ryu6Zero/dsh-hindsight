@@ -36,6 +36,25 @@ export interface RecallResult {
   results: Insight[]
 }
 
+/** One node in the Hindsight knowledge graph. */
+export interface GraphNode extends Insight {
+  color?: string
+}
+
+/** One directed edge between two graph nodes. */
+export interface GraphEdge {
+  sourceId: string
+  targetId: string
+  /** e.g. temporal / semantic / causal / entity. */
+  label?: string
+  weight?: number
+}
+
+export interface GraphSnapshot {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+}
+
 /** Hindsight bank list entry. */
 export interface BankSummary {
   id: string
@@ -56,6 +75,18 @@ export interface ForgetReceipt {
   action: 'invalidated' | 'not-found'
   id: string
 }
+
+/**
+ * Reusable setup guidance (B/0.2.0): the minimal official Docker one-liner to
+ * stand up a local Hindsight server. Mirror name verified against
+ * https://hindsight.vectorize.io/developer/installation.
+ */
+export const HINDSIGHT_SETUP_HINT =
+  'Hindsight 未运行或不可达。快速本地启动(Docker,需 OPENAI_API_KEY):\n' +
+  '  docker run -it --pull always --name hindsight --restart unless-stopped \\\n' +
+  '    -p 8888:8888 -p 9999:9999 -e HINDSIGHT_API_LLM_API_KEY=$OPENAI_API_KEY \\\n' +
+  '    -v hindsight-data:/home/hindsight/.pg0 ghcr.io/vectorize-io/hindsight:latest\n' +
+  'API 监听 http://localhost:8888。详见 docs: https://hindsight.vectorize.io/developer/installation'
 
 /**
  * Seconds-bounded query runner that coerces buffer/timeout into an
@@ -103,12 +134,19 @@ export function normalizeInsight(item: unknown): Insight | undefined {
   const category = jsonText(rec.type) ?? jsonText(rec.fact_type) ?? jsonText(rec.category)
   const createdAt =
     jsonText(rec.mentioned_at) ?? jsonText(rec.date) ?? jsonText(rec.occurred_start)
+  const rawEntities = rec.entities
+  const entities = Array.isArray(rawEntities)
+    ? rawEntities.filter((entry): entry is string => typeof entry === 'string')
+    : typeof rawEntities === 'string'
+      ? rawEntities.split(',').map((entry) => entry.trim()).filter(Boolean)
+      : []
   return {
     id,
     text,
     ...(category === undefined ? {} : { category }),
     ...(score === undefined ? {} : { score }),
     ...(createdAt === undefined ? {} : { createdAt }),
+    ...(entities.length === 0 ? {} : { entities }),
   }
 }
 
@@ -156,6 +194,39 @@ export class HindsightClient {
     } catch {
       return false
     }
+  }
+
+  /**
+   * Structured diagnosis for setup guidance (B/0.2.0). Never throws; distinguishes
+   * "server unreachable" from "server up but bank missing".
+   */
+  async diagnose(): Promise<{ reachable: boolean; bankExists: boolean; error?: string }> {
+    // 1. Is the server reachable?
+    let reachable = false
+    try {
+      const res = await fetchWithTimeout(
+        `${this.config.endpoint}/health`,
+        { method: 'GET', signal: undefined },
+        this.config.healthTimeoutMs,
+      )
+      reachable = res.ok
+    } catch {
+      reachable = false
+    }
+    if (!reachable) {
+      return { reachable: false, bankExists: false, error: `Hindsight 未在 ${this.config.endpoint} 上运行` }
+    }
+    // 2. Does the bank exist? lists banks and looks for config.bankId.
+    let bankExists = false
+    let bankErr: string | undefined
+    try {
+      const banks = await this.listBanks()
+      bankExists = banks.some((b) => b.id === this.config.bankId)
+      if (!bankExists) bankErr = `未找到 bank「${this.config.bankId}」`
+    } catch (e) {
+      bankErr = e instanceof Error ? e.message : String(e)
+    }
+    return { reachable: true, bankExists, error: bankErr }
   }
 
   /** Enumerate all memory banks visible to this server. */
@@ -257,6 +328,59 @@ export class HindsightClient {
       byFactType,
       operationsByStatus,
     }
+  }
+
+  /** Fetch the bank knowledge graph: entity-relationship nodes and edges. */
+  async graph(signal?: AbortSignal, limit = 1000): Promise<GraphSnapshot> {
+    const res = await fetchWithTimeout(
+      `${this.bankPath}/graph?limit=${limit}`,
+      { method: 'GET', headers: this.headers(), signal },
+      this.config.requestTimeoutMs,
+    )
+    if (!res.ok) throw new Error(`Hindsight graph failed: HTTP ${res.status}`)
+    const payload = asRecord(await res.json()) ?? {}
+    const nodes: GraphNode[] = (Array.isArray(payload.nodes) ? payload.nodes : []).flatMap((value) => {
+      const rec = asRecord(value)
+      const data = asRecord(rec?.data) ?? rec
+      const normalized = normalizeInsight(data)
+      if (normalized === undefined) return []
+      return [{ ...normalized, ...(jsonText(data?.color) === undefined ? {} : { color: jsonText(data?.color)! }) }]
+    })
+    const edges: GraphEdge[] = (Array.isArray(payload.edges) ? payload.edges : []).flatMap((value) => {
+      const rec = asRecord(value)
+      const data = asRecord(rec?.data) ?? rec
+      const sourceId = jsonText(data?.source) ?? jsonText(data?.from)
+      const targetId = jsonText(data?.target) ?? jsonText(data?.to)
+      if (sourceId === undefined || targetId === undefined) return []
+      return [{
+        sourceId,
+        targetId,
+        ...(jsonText(data?.linkType) === undefined ? {} : { label: jsonText(data?.linkType)! }),
+        ...(jsonNumber(data?.weight) === undefined ? {} : { weight: jsonNumber(data?.weight)! }),
+      }]
+    })
+    return { nodes, edges }
+  }
+
+  /**
+   * Breadth-first traversal over the knowledge graph: return nodes reachable
+   * from `id` within `depth` hops (excluding the start node).
+   */
+  async related(id: string, depth = 2, signal?: AbortSignal, limit = 1000): Promise<GraphNode[]> {
+    const graph = await this.graph(signal, limit)
+    let frontier = new Set<string>([id])
+    const visited = new Set<string>([id])
+    for (let level = 0; level < depth; level += 1) {
+      const next = new Set<string>()
+      for (const edge of graph.edges) {
+        if (frontier.has(edge.sourceId) && !visited.has(edge.targetId)) next.add(edge.targetId)
+        if (frontier.has(edge.targetId) && !visited.has(edge.sourceId)) next.add(edge.sourceId)
+      }
+      for (const value of next) visited.add(value)
+      frontier = next
+    }
+    const idSet = new Set<string>([id])
+    return graph.nodes.filter((node) => !idSet.has(node.id) && visited.has(node.id))
   }
 
   /**

@@ -1,5 +1,7 @@
 # 产品需求规范：dsh-hindsight
 
+> 版本：0.2.0（迭代中）。历史：0.1.0 已发布（npm + GitHub + 插件商店收录中）。当前迭代引入 A(图谱 related)、B(部署诊断与引导)、D(auto-remember 半自动)。
+
 ## 0. AI 使用说明
 
 - 本文档是 dsh-hindsight 功能、范围、行为和验收标准的事实来源。
@@ -50,23 +52,27 @@ DSH Agent 从"无记忆的每会话新兵"变成"有跨会话记忆的持续协�
 
 | 编号 | 内容 | 优先级 | 备注 |
 |---|---|---|---|
-| SCOPE-001 | Hindsight REST client:health/recall/list/listBanks/stats/remember/forget | P0 | 纯 HTTP,零 DSH 内部依赖,可复用 |
-| SCOPE-002 | DSH 斜杠命令 `/hindsight`(status/recall/list/remember/forget) | P0 | 人类操作面 |
-| SCOPE-003 | 5 个模型工具(hindsight_status/recall/list/remember/forget) | P0 | Agent 操作面 |
-| SCOPE-004 | Settings 注册(endpoint/token/bankId/各超时),live 生效 | P0 | 配置层 |
-| SCOPE-005 | cordis.patch.yml bundle 声明,dsh plugin add 即装 | P0 | 分发机制 |
-| SCOPE-006 | 集成测试 script/test-client.mjs | P1 | 对真实 Hindsight 跑 8 项契约 |
-| SCOPE-007 | 中文/英文 README + MIT LICENSE + GitHub Actions CI | P1 | 开源必备 |
+| SCOPE-001 | Hindsight REST client:health/recall/list/listBanks/stats/remember/forget | P0 | 0.1.0 已实现;0.2.0 保持 |
+| SCOPE-002 | DSH 斜杠命令 `/hindsight`(status/recall/list/remember/forget) | P0 | 0.1.0 已实现 |
+| SCOPE-003 | 5 个模型工具(hindsight_status/recall/list/remember/forget) | P0 | 0.1.0 已实现 |
+| SCOPE-004 | Settings 注册(endpoint/token/bankId/各超时),live 生效 | P0 | 0.1.0 已实现 |
+| SCOPE-005 | cordis.patch.yml bundle 声明,dsh plugin add 即装 | P0 | 0.1.0 已实现 |
+| SCOPE-006 | 集成测试 script/test-client.mjs | P1 | 0.1.0 已实现;0.2.0 扩展 related/auto-remember 用例 |
+| SCOPE-007 | 中文/英文 README + MIT LICENSE + GitHub Actions CI | P1 | 0.1.0 已实现;0.2.0 README 加零基础起步 |
+| SCOPE-008 | **A:图谱能力** related(id, depth) client + `hindsight_related` 工具 + `/hindsight related` 命令;recall 返回带 entities | P0 | 护城河:利用 Hindsight 知识图谱,竞品(纯向量)没有 |
+| SCOPE-009 | **B:部署诊断与引导** status 增强诊断 + 无 Hindsight 时返回 Docker one-liner 引导 | P0 | 破门槛:扩展"想用记忆的人",不只"已有 Hindsight 的人" |
+| SCOPE-010 | **D:auto-remember(半自动默认)** 会话结束事件提炼候选→确认后写入;`autoRemember` 配置 | P1 | 留存:让"记住"成为 DSH 本能而非显式命令 |
 
 ### 2.2 不在本版本范围
 
 | 编号 | 内容 | 原因 |
 |---|---|---|
-| OUT-001 | WebUI 面板 / sidebar 工作台 | 轻量版定位,纯后台;用户明确选"无重 WebUI" |
-| OUT-002 | 多 provider 抽象(dsh-mnemon 的九 provider 编排) | 我们是独立实体,不做编排层 |
-| OUT-003 | 内嵌 Hindsight 引擎 / 替用户部署 Hindsight | Hindsight 是外部依赖,用户自有服务 |
-| OUT-004 | Browser 客户端 / React UI | 本期纯 Host 插件,不需要 client 半 |
-| OUT-005 | 记忆蒸馏 / 去重子 agent | 轻量版,靠 Hindsight 自身 async 提取 |
+| OUT-001 | WebUI 面板 / sidebar 工作台 | 轻量版定位，纯后台;用户明确选"无重 WebUI";0.2.0 仍不做(C 缓) |
+| OUT-002 | 多 provider 抽象(dsh-mnemon 的九 provider 编排) | 我们是独立实体，不做编排层 |
+| OUT-003 | 内嵌 Hindsight 引擎 / 替用户部署 Hindsight | Hindsight 是外部依赖，用户自有服务;0.2.0 只做引导(one-liner)不做自动部署 |
+| OUT-004 | Browser 客户端 / React UI | 纯 Host 插件，不需要 client 半 |
+| OUT-005 | 记忆蒸馏 / 去重子 agent(完整版) | auto-remember 是轻量蒸馏;完整子 agent 蒸馏暂缓 |
+| OUT-006 | `hindsight_setup` 自动部署命令(B 的 Y 方案) | 轻量优先(X 方案 only one-liner);等真实用户反馈再升级 |
 
 ---
 
@@ -149,6 +155,8 @@ Agent 给出基于召回记忆的回答,工具调用记录在对话里。
 - `stats()`：GET `/stats`,归一化 totalNodes/totalLinks/totalDocuments/byFactType。
 - `remember(content, context)`：POST `/memories`,async:true,带 operation_id。
 - `forget(id)`：PATCH `/memories/{id}`,state=>invalidated。
+- `graph(limit)`：GET `/graph?limit=N`,归一化 nodes/edges(实体关系)。
+- `related(id, depth)`：对 `/graph` 做 BFS 遍历 depth 跳,返回邻居节点(A/0.2.0)。
 
 **规则：**
 - MUST 端点/请求形状按实测 8888 API 对齐(dsh-mnemon 的 `/health/live` 在本环境是 404,我们实测用 `/health`)。
@@ -162,6 +170,7 @@ Agent 给出基于召回记忆的回答,工具调用记录在对话里。
 - [ ] AC-003: Given 不存在的 bank,when 调 `stats()`,then 抛含 HTTP 状态的错误。
 - [ ] AC-004: Given 本地无 token,when 发请求,then 不带 Authorization 头。
 - [ ] AC-005: Given 测试跑完,when 扫描 bank,then 无 `dsh-hindsight-test` 残留。
+- [ ] AC-006(A): Given bank 有图,when 调 `related(id, 2)`,then 返回 id 的 depth≤2 邻居节点(排除自身)。
 
 ### REQ-002：/hindsight 斜杠命令
 
@@ -173,19 +182,22 @@ Agent 给出基于召回记忆的回答,工具调用记录在对话里。
 人类在 DSH 对话直接操作记忆。
 
 **行为：**
-`/hindsight` 一个命令,子命令:`status` | `recall <query>` | `list [query]` | `remember <content>` | `forget <id>`。空输入 = status。
+`/hindsight` 一个命令,子命令:`status` | `recall <query>` | `related <ID> [depth]` | `list [query]` | `remember <content>` | `forget <id>`。空输入 = status。
 
 **规则：**
 - MUST 返回 `{kind:'success'|'error', text}`(DSH CommandResult)。
-- MUST recall 最多 10 条,每条含 ID(供 forget 用)。
+- MUST recall 最多 10 条,每条含 ID(供 forget/related 用)。
 - MUST forget 只接受一个无空格 ID。
 - MUST status 显示 endpoint/bank/有效记忆数/连接数/文档数/分类分布。
+- MUST related 需完整 ID;depth 可选(默认 2,范围 1-5)。
 
 **验收标准：**
 - [ ] AC-001: Given 输入 `/hindsight status`,when Hindsight healthy,then 显示 bank 统计。
 - [ ] AC-002: Given 输入 `/hindsight recall X`,when 有相关记忆,then 返回匹配文本+ID。
 - [ ] AC-003: Given 输入 `/hindsight forget 无效ID`,then 返回 not-found 错误。
 - [ ] AC-004: Given 输入 `/hindsight 未知子命令`,then 返回 usage 提示。
+- [ ] AC-005(A): Given `/hindsight related <ID>`,when 该 id 有邻居,then 返回关联记忆文本。
+- [ ] AC-006(A): Given `/hindsight related <ID> 10`,then 报 depth 超范围用法提示。
 
 ### REQ-003：模型工具
 
@@ -196,18 +208,21 @@ Agent 给出基于召回记忆的回答,工具调用记录在对话里。
 Agent 在下一步模型调用里直接用记忆。
 
 **行为：**
-5 个工具:`hindsight_status` / `hindsight_recall` / `hindsight_list` / `hindsight_remember` / `hindsight_forget`,全部返回 JSON 对象(bounded)。
+6 个工具:`hindsight_status` / `hindsight_recall` / `hindsight_related` / `hindsight_list` / `hindsight_remember` / `hindsight_forget`,全部返回 JSON 对象(bounded)。`hindsight_recall` 结果带 entities;`hindsight_status` 不可达时返回具体诊断 + 部署引导。
 
 **规则：**
 - MUST 用官方 `defineTool` + `ValueSchemaSpec` 声明(不用 `as never` 绕过)。
-- MUST recall 结果 bound 到 900 字符/条,防止上下文污染。
+- MUST recall/related 结果 bound 到 900 字符/条,防止上下文污染。
 - MUST 工具描述写明"仅当需历史时调用",不给模型滥用台阶。
 - MUST 返回值符合 `Record<string, JsonValue>`。
+- MUST(A) `hindsight_related` 描述写明"仅在 recall 命中后需关联追溯时调用";depth 1-5。
+- MUST(B) `hindsight_status` 连不上时返回 {healthy:false, error, hint},hint 含 Docker one-liner。
 
 **验收标准：**
-- [ ] AC-001: Given 工具注册,when 调 `hindsight_recall`,then 返回 {query, total, results[], hint}。
-- [ ] AC-002: Given 服务不可达,when 调 `hindsight_status`,then 返回 {healthy:false, error}。
+- [ ] AC-001: Given 工具注册,when 调 `hindsight_recall`,then 返回 {query, total, results[], hint} 且 results 含 entities(B/A)。
+- [ ] AC-002(B): Given 服务不可达,when 调 `hindsight_status`,then 返回 {healthy:false, error, hint} 且 hint 含引导。
 - [ ] AC-003: Given 调 `hindsight_remember`,then 返回 {action:'stored', operationId}。
+- [ ] AC-004(A): Given 调 `hindsight_related(id, 2)`,then 返回 {id, depth, results[]}。
 
 ### REQ-004：Settings + bundle 分发
 
@@ -218,18 +233,69 @@ Agent 在下一步模型调用里直接用记忆。
 
 **行为：**
 - `ctx.settings.register(settingsNamespace('hindsight'), Config, {base, applies:'live'})`。
-- Config 字段:endpoint(default http://localhost:8888)、token(默认 '')、bankId(默认 hermes)、defaultRecallLimit(10)、requestTimeoutMs(15000)、healthTimeoutMs(5000)。
+- Config 字段:endpoint(default http://localhost:8888)、token(默认 '')、bankId(默认 hermes)、defaultRecallLimit(10)、requestTimeoutMs(15000)、healthTimeoutMs(5000)、autoRemember(默认 true,半自动)。
 - package.json 声明 `dsh.bundle.patch: ./cordis.patch.yml`,bundle 层 insert 默认配置行。
 
 **规则：**
 - MUST 配置字段用 `token` 而非 `apiKey`(绕开写盘凭据脱敏,已踩过坑)。
 - MUST cordis.patch.yml 用 `- insert:` + id=hindsight(与既有插件格式一致)。
 - MUST 不依赖 dsh-mnemon 任何包。
+- MUST(D) `autoRemember` 默认 true 但为"半自动"(候选先问确认再写);用户可关。
 
 **验收标准：**
 - [ ] AC-001: Given `dsh plugin --profile web add link:...`,then 进 bundles、正确 link。
 - [ ] AC-002: Given 构建产物,when grep `***`/`proces...`,then 零污染。
 - [ ] AC-003: Given `npm pack`,then tarball 只含 lib/cordis.patch.yml/README/LICENSE。
+- [ ] AC-004(D): Given autoRemember 默认值,then 为 true。
+
+### REQ-005：部署诊断与引导（B/0.2.0）
+
+**优先级：** P0
+**关联任务：** TASK-003
+
+**用途：**
+降低没有 Hindsight 用户的接入门槛。status 连不上时给出具体诊断,并引导一次性拉起 Hindsight。
+
+**行为：**
+- `hindsight_status` / `/hindsight status` 在 health 失败时,区分诊断:
+  - 端口不通 → 提示"Hindsight 未在 {endpoint} 运行",附 Docker one-liner。
+  - 通但 bank 404 → 提示"bank {bankId} 不存在",引导创建。
+  - 通且健康 → 正常统计。
+- Docker one-liner(供引导文案):`docker run -d -p 8888:8888 vectorizeio/hindsight`(最终镜像名以 Hindsight 官方文档为准,写入 README 快速起步)。
+
+**规则：**
+- MUST 引导文案可执行(用户能复制即跑)。
+- MUST 不自动执行 docker(只提示,不代跑)。
+- SHOULD 诊断信息含足够定位信息(端点/bankId)。
+
+**验收标准：**
+- [ ] AC-001(B): Given Hindsight 端口不通,when 调 status,then 返回 {healthy:false, error, hint} 且 hint 含"docker run"。
+- [ ] AC-002(B): Given bank 不存在,when 调 status,then 错误含具体 bankId 提示。
+
+### REQ-006：auto-remember 会话钩子（D/0.2.0）
+
+**优先级：** P1
+**关联任务：** TASK-002
+
+**用途：**
+让"记住"成为 DSH 本能。会话结束时提炼值得长期记忆的事实,半自动确认后写入。
+
+**行为：**
+- 监听 DSH 会话流程结束事件(`conversation.chat` 类 finish)。
+- 本轮对话中值得长期记的事实提炼成 1-3 条候选(轻量:直接让模型提炼,不 spawn 子 agent)。
+- 默认半自动:进程返回候选 + "要存吗?",用户确认后调 `hindsight_remember`。
+- `autoRemember: true` 且用户确认 → 写;`false` → 不触发。
+
+**规则：**
+- MUST 默认半自动(用户确认才写),因 Hindsight 库已有 failed 噪音,全自动会加剧污染。
+- MUST 不提炼敏感/临时级内容(如"今天天气","帮我看下这个"),护栏在提炼提示里写明。
+- MUST 遵守现有红线:不写违反用户红线的内容。
+- SHOULD 候选去重(避免重复写同一条)。
+
+**验收标准：**
+- [ ] AC-001(D): Given autoRemember=true 且一轮值得记的对话结束,then 提炼出候选并请求确认。
+- [ ] AC-002(D): Given 用户确认,then 调 remember 入队并返回 operationId。
+- [ ] AC-003(D): Given autoRemember=false,then 会话结束不触发提炼。
 
 ---
 
@@ -285,17 +351,23 @@ Agent 在下一步模型调用里直接用记忆。
 
 ## 9. 完成定义
 
-MVP 完成条件：
+MVP(0.1.0)完成条件：
 
 - [x] 所有 P0 requirements 已实现(REQ-001..004)
 - [x] 所有 P0 acceptance criteria 已通过(集成测试 8/8)
 - [x] 所有 P0 user flows 可以端到端完成(web profile 装入成功)
 - [x] 主要错误状态、空状态、超时已处理
 - [x] Product Spec 与代码实现保持一致
+- [x] npm publish 成功 + GitHub 开源 + 插件商店收录中
 
-待发布补全：
+0.2.0 迭代：
 
-- [ ] npm publish 成功且全局安装后可 `dsh plugin add`(需用户 npm login)
+- [ ] SCOPE-008(A) related/graph 实现:client.related + hindsight_related 工具 + /hindsight related + recall 带 entities
+- [ ] SCOPE-009(B) status 诊断增强 + Docker one-liner 引导
+- [ ] SCOPE-010(D) auto-remember 半自动(会话钩子 + 确认 + autoRemember 配置)
+- [ ] 集成测试扩至 related + auto-remember
+- [ ] README 加"零基础起步"(无 Hindsight 怎么办)
+- [ ] npm 发 0.2.0 + GitHub 同步
 
 ---
 
@@ -308,13 +380,16 @@ MVP 完成条件：
 | ASM-001 | 用户有自己的 Hindsight 服务(或打算自托管) | 本项目就是为此而生 | 若无则插件无可用后端,需文档引导部署 |
 | ASM-002 | DSH 生态接受本地 link 安装 + 后续 npm 发布 | 已验证 web profile 装入 | 若 npm 名冲突需换名 |
 | ASM-003 | remember 的落地延迟由 Hindsight 异步提取决定,插件不保证立即可见 | 实测 15s 内未见 + pending consolidation 卡顿 | 用户可能误以为 remember 失败,需文档说明 |
+| ASM-004 | 图谱扩展能带来差异化(related 是竞品没有的) | Hindsight 有 graph API + 4.1万边；dsh-mnemosyne 只有向量 | 若用户不常做关联追溯,related 使用率低 |
+| ASM-005 | 半自动 auto-remember 比全自动更适合当前库质量 | 库有 failed 噪音,全自动会加剧 | 半自动少打扰但留存提升有限 |
+| ASM-006 | Docker one-liner 引导能降低门槛(用户愿自己拉镜像) | dsh-mnemosyne 主打零成本本地 | 若用户连 Docker 都没有,需文档给替代(云上/已有实例) |
 
 ### 10.2 待确认问题
 
 | 编号 | 问题 | 是否阻塞 | 备注 |
 |---|---|---|---|
-| Q-001 | npm 发布账号登录状态(当前 whoami 报 ENEEDAUTH) | Yes | 发布前需用户 npm login |
-| Q-002 | Hindsight 完整 recall 端点是否对 `/health/live` 也有支持 | No | 我们实测用 `/health`,兼容更多部署加 fallback 即可 |
+| Q-001 | Hindsight 完整 recall 端点是否对 `/health/live` 也有支持 | No | 我们实测用 `/health`,兼容更多部署加 fallback 即可 |
+| Q-002 | Hindsight 官方 Docker 镜像的准确名称与组网参数(引导文案用) | No(B 不阻塞,可先写占位) | release 前 WebSearch 确认 vectorizeio 官方镜像 |
 
 ---
 

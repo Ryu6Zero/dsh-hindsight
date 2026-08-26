@@ -51,14 +51,32 @@ The default points at `http://localhost:8888`, bank `hermes`. Override per profi
 | `defaultRecallLimit` | `10` | Max results per recall |
 | `requestTimeoutMs` | `15000` | Data-plane request timeout |
 | `healthTimeoutMs` | `5000` | Health probe timeout |
+| `autoRemember` | `true` | Suggest durable facts to save at session end (semi-auto: asks before writing) |
 
 Environment/user settings take precedence over the bundle defaults. Tokens are kept out of checked-in config.
+
+## Zero-install: no Hindsight yet?
+
+This plugin bridges DSH to an existing Hindsight server. **You don't have one?** Stand up the official Docker image in ~1 minute (needs an `OPENAI_API_KEY`):
+
+```sh
+docker run -it --pull always --name hindsight --restart unless-stopped \
+  -p 8888:8888 -p 9999:9999 -e HINDSIGHT_API_LLM_API_KEY=$OPENAI_API_KEY \
+  -v hindsight-data:/home/hindsight/.pg0 ghcr.io/vectorize-io/hindsight:latest
+```
+
+- API server listens on `http://localhost:8888` (what this plugin reads by default).
+- Create a memory bank named `hermes` from the control panel at `http://localhost:9999`, or set `bankId` in settings to your own bank.
+- `hindsight_status` reports a helpful setup hint (including the commands above) whenever the server is unreachable or the bank is missing, so a failed first run tells you exactly what to do.
+
+Official docs: https://hindsight.vectorize.io/developer/installation
 
 ## Usage
 
 ```text
 /hindsight status                 # bank stats, memory/link/doc counts
 /hindsight recall 记忆架构决策     # semantic recall, shows text + ID
+/hindsight related <ID> [depth]   # traverse knowledge-graph neighbors (1-5 hops)
 /hindsight list                   # recent memories
 /hindsight remember 记住X          # queue content for async extraction
 /hindsight forget <ID>            # soft-delete (invalidate) one memory

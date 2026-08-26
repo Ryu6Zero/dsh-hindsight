@@ -6,9 +6,13 @@ import type {} from '@deepseek-ai/dsh-settings'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-commands'
-import { HindsightClient, type HindsightConfig } from './hindsight.ts'
+import { HindsightClient, HINDSIGHT_SETUP_HINT, type HindsightConfig } from './hindsight.ts'
 import { registerCommands } from './commands.ts'
 import { registerHindsightTools } from './tools.ts'
+
+// Re-export useful pieces for consumers/tests.
+export { HindsightClient, HINDSIGHT_SETUP_HINT } from './hindsight.ts'
+export type { HindsightConfig } from './hindsight.ts'
 
 /**
  * Plugin configuration. The bundle patch (cordis.patch.yml) injects defaults;

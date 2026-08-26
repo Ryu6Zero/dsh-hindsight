@@ -1,9 +1,9 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type { HindsightConfig } from './hindsight.ts'
-import { HindsightClient } from './hindsight.ts'
+import { HindsightClient, HINDSIGHT_SETUP_HINT } from './hindsight.ts'
 
-const USAGE = '用法：/hindsight [status|recall <查询>|list [查询]|remember <内容>|forget <ID>]'
+const USAGE = '用法：/hindsight [status|recall <查询>|related <ID> [depth]|list [查询]|remember <内容>|forget <ID>]'
 
 function error(text: string): CommandResult {
   return { kind: 'error', text: `${text}\n${USAGE}` }
@@ -34,7 +34,7 @@ function splitInput(rawInput: string): { verb: string; argument: string } {
 export function registerCommands(ctx: Context, resolve: () => HindsightConfig): void {
   ctx.commands.register({
     name: 'hindsight',
-    description: 'Query or write Hindsight memory. Subcommands: status, recall <query>, list [query], remember <content>, forget <ID>.',
+    description: 'Query or write Hindsight memory. Subcommands: status, recall <query>, related <ID> [depth], list [query], remember <content>, forget <ID>.',
     input: { hint: 'recall 用户偏好的开发语言' },
     async handler(invocation: CommandInvocation): Promise<CommandResult> {
       const { verb, argument } = splitInput(invocation.rawInput)
@@ -42,8 +42,13 @@ export function registerCommands(ctx: Context, resolve: () => HindsightConfig): 
       switch (verb) {
         case 'status': {
           if (argument !== '') return error('status 不接受额外参数。')
-          const alive = await client.health()
-          if (!alive) return { kind: 'error', text: `Hindsight 不可用（${resolve().endpoint}）。请确认服务在运行。` }
+          const dx = await client.diagnose()
+          if (!dx.reachable) {
+            return { kind: 'error', text: `${dx.error ?? 'Hindsight 不可用'}。\n\n${HINDSIGHT_SETUP_HINT}` }
+          }
+          if (!dx.bankExists) {
+            return { kind: 'error', text: `${dx.error ?? `bank ${resolve().bankId} 缺失`}。Hindsight 控制面板(/9999)创建该内存库后再试。` }
+          }
           const stats = await client.stats(invocation.signal)
           return {
             kind: 'success',
@@ -62,6 +67,19 @@ export function registerCommands(ctx: Context, resolve: () => HindsightConfig): 
           const result = await client.recall(argument, invocation.signal)
           if (result.results.length === 0) return { kind: 'success', text: `没有找到与“${argument}”相关的记忆。` }
           return { kind: 'success', text: `召回 ${result.results.length} 条：\n\n${result.results.map(insightLine).join('\n\n')}` }
+        }
+        case 'related': {
+          if (argument === '') return error('related 需要 recall/list 返回的完整记忆 ID。')
+          const space = argument.indexOf(' ')
+          const id = space < 0 ? argument : argument.slice(0, space)
+          const depthRaw = space < 0 ? undefined : argument.slice(space + 1).trim()
+          if (depthRaw !== undefined) {
+            const n = Number(depthRaw)
+            if (!Number.isInteger(n) || n < 1 || n > 5) return error('depth 需为 1-5 的整数。')
+          }
+          const nodes = await client.related(id, depthRaw === undefined ? 2 : Number(depthRaw), invocation.signal)
+          if (nodes.length === 0) return { kind: 'success', text: `ID ${id} 的 ${depthRaw === undefined ? 2 : Number(depthRaw)} 跳内没有关联记忆。` }
+          return { kind: 'success', text: `关联记忆 ${nodes.length} 条（depth=${depthRaw === undefined ? 2 : Number(depthRaw)}）：\n\n${nodes.map(insightLine).join('\n\n')}` }
         }
         case 'list': {
           const result = await client.list(invocation.signal, 20, argument, 'valid')

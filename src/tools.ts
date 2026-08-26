@@ -1,7 +1,7 @@
 import type { ToolRuntime, JsonValue } from '@deepseek-ai/dsh-tools'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { HindsightConfig } from './hindsight.ts'
-import { HindsightClient } from './hindsight.ts'
+import { HindsightClient, HINDSIGHT_SETUP_HINT } from './hindsight.ts'
 
 const JSON_OUTPUT = { type: 'object', additionalProperties: true } as const
 
@@ -19,27 +19,44 @@ function bound(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max - 1)}…`
 }
 
-function toInsightJson(item: { id: string; text: string; category?: string; score?: number; createdAt?: string }): JsonObj {
+function toInsightJson(item: { id: string; text: string; category?: string; score?: number; createdAt?: string; entities?: string[] }): JsonObj {
   return {
     id: item.id,
     text: bound(item.text, 900),
     ...(item.category === undefined ? {} : { category: item.category }),
     ...(item.score === undefined ? {} : { score: item.score }),
     ...(item.createdAt === undefined ? {} : { createdAt: item.createdAt }),
+    ...(item.entities === undefined || item.entities.length === 0 ? {} : { entities: item.entities as JsonValue }),
   }
 }
 
 export function registerHindsightTools(ctxTools: ToolRuntime, resolve: () => HindsightConfig): void {
   ctxTools.register(defineTool({
     name: 'hindsight_status',
-    description: 'Check Hindsight memory-server health and current bank statistics. Use only when a memory operation fails or the user asks about memory health; do not call it to route recall.',
+    description: 'Check Hindsight memory-server health, bank statistics, or diagnose a broken setup. When the server is unreachable, returns a setup hint with the Docker one-liner. Use when a memory operation fails or the user asks about memory health.',
     parameters: {},
     output: { schema: JSON_OUTPUT, render: renderText },
     async execute(_args: unknown, exec): Promise<JsonObj> {
       const client = new HindsightClient(resolve())
-      const alive = await client.health()
-      if (!alive) {
-        return { healthy: false, endpoint: resolve().endpoint, error: 'Hindsight server unreachable' }
+      const dx = await client.diagnose()
+      if (!dx.reachable) {
+        return {
+          healthy: false,
+          reachable: false,
+          endpoint: resolve().endpoint,
+          error: dx.error ?? 'Hindsight server unreachable',
+          hint: HINDSIGHT_SETUP_HINT,
+        }
+      }
+      if (!dx.bankExists) {
+        return {
+          healthy: false,
+          reachable: true,
+          endpoint: resolve().endpoint,
+          bankId: resolve().bankId,
+          error: dx.error ?? `bank ${resolve().bankId} missing`,
+          hint: `bank「${resolve().bankId}」不存在。Hindsight 启动后需先在控制面板(/9999)创建该内存库。`,
+        }
       }
       let stats: JsonValue
       try {
@@ -47,7 +64,7 @@ export function registerHindsightTools(ctxTools: ToolRuntime, resolve: () => Hin
       } catch (err) {
         stats = { error: err instanceof Error ? err.message : String(err) } as JsonValue
       }
-      return { healthy: true, endpoint: resolve().endpoint, bankId: resolve().bankId, stats }
+      return { healthy: true, reachable: true, endpoint: resolve().endpoint, bankId: resolve().bankId, stats }
     },
   }))
 
@@ -138,6 +155,28 @@ export function registerHindsightTools(ctxTools: ToolRuntime, resolve: () => Hin
         action: receipt.action,
         id: args.id,
         summary: receipt.action === 'not-found' ? 'No memory with that id.' : 'Memory invalidated (soft delete).',
+      } satisfies JsonObj
+    },
+  }))
+
+  ctxTools.register(defineTool({
+    name: 'hindsight_related',
+    description: 'Traverse Hindsight knowledge-graph neighbors of one memory id returned by hindsight_recall or hindsight_list. Use it ONLY after a recall hit when the graph connections matter (e.g. tracing related decisions/entities); each traversal fetches the graph, so do not call it preemptively.',
+    parameters: {
+      id: { type: 'string', required: true, description: 'Exact memory id from hindsight_recall/hindsight_list.' },
+      depth: { type: 'integer', description: 'Traversal depth (1-5, default 2).' },
+    },
+    output: { schema: JSON_OUTPUT, render: renderText },
+    async execute(args: { id: string; depth?: number }, exec) {
+      const client = new HindsightClient(resolve())
+      const depth = args.depth == null ? 2 : Math.max(1, Math.min(5, Math.trunc(args.depth)))
+      const nodes = await client.related(args.id, depth, exec.signal)
+      return {
+        id: args.id,
+        depth,
+        total: nodes.length,
+        results: nodes.map(toInsightJson),
+        hint: 'These are graph neighbors of the memory. Use when connection/entity context is needed; answer from them without re-traversing this turn.',
       } satisfies JsonObj
     },
   }))

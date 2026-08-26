@@ -39,6 +39,17 @@ async function main() {
   const health = await client.health()
   check('health()', health === true, JSON.stringify(health))
 
+  // 1b. B/0.2.0 diagnose: reachable bank → healthy; unreachable port → hint.
+  try {
+    const dx = await client.diagnose()
+    check('diagnose() ok-bank', dx.reachable === true && dx.bankExists === true, JSON.stringify(dx))
+    const dys = createClient({ endpoint: `${URL.replace(/\/+$/, '')}:39999`, bankId: BANK })
+    const dxDown = await dys.diagnose()
+    check('diagnose() unreachable', dxDown.reachable === false && dxDown.error !== undefined, JSON.stringify(dxDown))
+  } catch (e) {
+    check('diagnose()', false, e.message)
+  }
+
   // 2. stats
   let stats
   try {
@@ -72,6 +83,32 @@ async function main() {
     check('list()', items.length >= 1, `items=${items.length}`)
   } catch (e) {
     check('list()', false, e.message)
+  }
+
+  // 5b. graph + related (A/0.2.0) — recall hit carries entities; related BFS
+  //     traverses the knowledge graph. Use a graph-connected node id for the
+  //     traversal (a recall hit may be an isolated node with no edges).
+  try {
+    const r = await client.recall('记忆架构')
+    const hit = r.results[0]
+    check('recall() entities', hit.entities !== undefined && hit.entities.length >= 1, `entities=${JSON.stringify(hit.entities)}`)
+    const g = await client.graph(undefined, 20)
+    check('graph()', g.nodes.length >= 1 && g.edges.length >= 1, `nodes=${g.nodes.length} edges=${g.edges.length}`)
+    const edgeIds = new Set()
+    g.edges.forEach(e => { edgeIds.add(e.sourceId); edgeIds.add(e.targetId) })
+    const connected = g.nodes.find(n => edgeIds.has(n.id))
+    if (connected !== undefined) {
+      const nodes = await client.related(connected.id, 2)
+      check('related()', nodes.length >= 1 && !nodes.some(n => n.id === connected.id), `neighbors=${nodes.length}`)
+      // depth boundary (A/0.2.0, Spec REQ-001 AC-006): depth=1 must return no more
+      // neighbors than depth=2, both exclude the start node, both run w/o error.
+      const near = await client.related(connected.id, 1)
+      check('related() depth-boundary', near.length >= 0 && near.length <= nodes.length && !near.some(n => n.id === connected.id), `d1=${near.length} d2=${nodes.length}`)
+    } else {
+      check('related()', false, 'no graph-connected node')
+    }
+  } catch (e) {
+    check('graph+related', false, e.message)
   }
 
   // 6. roundtrip: remember -> forget (uses a unique marker so we never touch user data).

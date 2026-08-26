@@ -1,0 +1,36 @@
+# Product-Spec 变更记录
+
+本文档记录 dsh-hindsight 需求规范的每次迭代变更。格式：日期 · 变更 · 涉及范围。
+
+---
+
+## 0.2.0 (2026-08-26)
+
+**方向**：A(图谱 related) + B(部署诊断与引导) + D(auto-remember 半自动)。北极星从"给已有 Hindsight 用户加工具"转为"给想用记忆的 DSH 用户一个带护城河的记忆插件"。
+
+**新增/扩展范围**
+- SCOPE-008(A)：图谱能力 —— client.related(id, depth)/graph()、`hindsight_related` 工具、`/hindsight related` 命令、recall 带 entities。护城河(竞品 dsh-mnemosyne 只有向量检索,无实体关系)。
+- SCOPE-009(B)：status 诊断增强 + 无 Hindsight 时 Docker one-liner 引导。破门槛(扩用户)。
+- SCOPE-010(D)：auto-remember 半自动(会话钩子 + 候选确认 + autoRemember 配置)。留存。
+
+**需求变更**
+- REQ-001：新增 `graph(limit)`、`related(id, depth)`；新增 AC-006(related 邻居)。
+- REQ-002：命令新增 `related <ID> [depth]` 子命令；新增 AC-005/006。
+- REQ-003：工具 5→6 个(新增 hindsight_related);recall 带 entities;status 返回 {healthy,error,hint} 带引导;新增 AC-001/002/004。
+- REQ-004：Config 新增 `autoRemember`(默认 true,半自动);新增 AC-004。
+- REQ-005(新)：部署诊断与引导(B)。AC:端口不通 hint 含 docker run / bank 404 提示。
+- REQ-006(新)：auto-remember 会话钩子(D)。AC:半自动候选确认 / 确认后入队 / 关闭不触发。
+
+**决策记录**
+- A：related 让模型传 depth(1-5),工具描述加防滥用护栏。
+- B：先做轻量 Docker one-liner 引导(X 方案),不做 `hindsight_setup` 自动部署命令(Y 方案暂缓,OUT-006)。
+- D：半自动默认(写完问确认),因 Hindsight 库已有 failed=164 噪音,全自动会加剧污染。配 autoRemember 开关。
+
+**待确认**
+- Q-002：Hindsight 官方 Docker 镜像准确名称(B 引导文案用),release 前 WebSearch 确认。
+
+---
+
+## 0.1.0 (2026-08-26)
+
+**初始版本**：MVP 发布。范围 SCOPE-001..007,REQ-001..004。npm 发布 + GitHub 开源 + 插件商店收录。

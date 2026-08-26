@@ -1,7 +1,7 @@
 # 开发计划：dsh-hindsight
 
 关联需求：`Product-Spec.md`
-状态：开发主体完成,进入发布阶段。
+状态：0.1.0 已发布（npm + GitHub + 收录中）。→ 0.2.0 迭代进行中（A 图谱 / B 诊断引导 / D auto-remember）。
 
 ---
 
@@ -56,19 +56,48 @@
 - [x] 解决 supply-chain minimum release age 阻塞(pnpm-workspace.yaml exclude)
 - [ ] 启动 dsh web 实测 `/hindsight status` 真实输出(下一阶段)
 
-## Phase 5 · 发布（⬜ 进行中）
+## Phase 5 · 发布（✅ 完成）
 
 **目标：** 开源 + npm 可装。
 **完成标准：** GitHub 仓库可 clone、npm publish 后可 `dsh plugin add`。
 
 - [x] Product-Spec.md(需求单一真相源)
 - [x] code-review 自查(见阶段审查记录)
-- [ ] 启动 dsh web 冒烟测试 /hindsight 命令
-- [ ] release-builder 隐私审计(/Users/、.db、.env、key、token)
-- [ ] README(中英)+ LICENSE(MIT)
-- [ ] CI(GitHub Actions 自动 publish npm)
-- [ ] GitHub 建仓 Ryu6Zero/dsh-hindsight + 推送
-- [ ] npm publish(需用户 npm login)
+- [x] 启动 dsh web 冒烟测试 /hindsight 命令(模型实调 + 真实召回)
+- [x] release-builder 隐私审计(/Users/、.db、.env、key、token 全绿)
+- [x] README(中英)+ LICENSE(MIT)
+- [x] CI(GitHub Actions 自动 publish npm)
+- [x] GitHub 建仓 Ryu6Zero/dsh-hindsight + 推送(已改名小写)
+- [x] npm publish 0.1.0 + registry 装回验证 + headless 真实调用
+- [x] 插件商店收录(打 dsh-plugin topic + 描述,等爬取)
+
+## Phase 6 · 0.2.0 迭代（⬜ 进行中）
+
+**目标：** A(图谱 related) + B(部署诊断引导) + D(auto-remember 半自动)。
+**完成标准：** Spec 全 AC 通过,发 0.2.0。
+
+### 6-A 图谱能力（SCOPE-008 / REQ-001,003 / P0）
+- [ ] client: `graph(limit)` + `related(id, depth)`(BFS 遍历)
+- [ ] 工具 `hindsight_related`(depth 1-5,防滥用描述)
+- [ ] 命令 `/hindsight related <ID> [depth]`
+- [ ] `hindsight_recall` 返回带 entities
+- [ ] 集成测试: related 邻居断言 + 零残留
+
+### 6-B 部署诊断与引导（SCOPE-009 / REQ-005 / P0）
+- [ ] `hindsight_status`/`/hindsight status` 连不上 → {healthy:false, error, hint}
+- [ ] hint 含 Docker one-liner(bank 404 / 端口不通 分别诊断)
+- [ ] README 加"零基础起步"(无 Hindsight 怎么办)
+- [ ] WebSearch 确认 Hindsight 官方 Docker 镜像名(Q-002)
+
+### 6-D auto-remember 半自动（SCOPE-010 / REQ-006 / P1）
+- [ ] 会话结束事件钩子,提炼候选(不 spawn 子 agent)
+- [ ] 半自动确认后再 remember(护栏:不写敏感/临时)
+- [ ] Config 加 `autoRemember`(默认 true 半自动)
+- [ ] 集成测试: autoRemember on/off 行为
+
+### 发布
+- [ ] 隐私审计 + 集成测试扩至 related/auto-remember
+- [ ] npm 发 0.2.0 + GitHub 推送 + 更新 Spec 勾选
 
 ## 阶段审查记录
 
@@ -76,3 +105,4 @@
 - **npm arborist 崩**：npm 装 tsdown→vitest 依赖树崩 `edgesOut`。改用 pnpm(DSH 生态默认)。
 - **supply-chain 阻塞**：@linxin666 昨天发布触发 minimum release age。DSH 生态标准解=pnpm-workspace.yaml `minimumReleaseAgeExclude`。
 - **集成测试教训**：remember→recall 落地依赖 Hindsight 自身 async consolidation(环境依赖),不作为插件契约硬断言,标 warning。
+- **0.2.0 决策**：A 用模型传 depth;B 只做 one-liner 引导不做 setup 命令;C(WebUI)暂缓;D 半自动默认(库有 failed 噪音,全自动加剧污染)。
