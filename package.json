@@ -1,6 +1,6 @@
 {
   "name": "dsh-hindsight",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Official-grade DeepSeek Harness memory plugin backed by Hindsight (vectorize-io). Add /hindsight commands and model tools that recall, remember, inspect and forget through a Hindsight memory bank.",
   "keywords": [
     "deepseek-harness",

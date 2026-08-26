@@ -12,10 +12,13 @@ DSH Agent 默认无状态——每次会话都从零开始。已有的记忆方�
 
 ## 特性
 
-- **`/hindsight` 斜杠命令** — `status` / `recall <查询>` / `list [查询]` / `remember <内容>` / `forget <ID>`
-- **5 个模型工具** — `hindsight_status` `hindsight_recall` `hindsight_list` `hindsight_remember` `hindsight_forget`(Agent 下一步可直接调用)
-- **热配置** — `endpoint` / `token` / `bankId` / 超时,改完即时生效,无需重启
-- **独立 client** — `HindsightClient` 是零依赖 HTTP 层(`health` `recall` `list` `listBanks` `stats` `remember` `forget`),插件之外也能复用
+- **`/hindsight` 斜杠命令** — `status` / `recall <查询>` / `related <ID> [depth]` / `list [查询]` / `remember <内容>` / `forget <ID>`
+- **6 个模型工具** — `hindsight_status` `hindsight_recall` `hindsight_related` `hindsight_list` `hindsight_remember` `hindsight_forget`(Agent 下一步可直接调用)
+- **知识图谱遍历** — `hindsight_related`:从一条记忆出发,BFS 遍历 Hindsight 实体关系图谱的邻居(1-5 跳),追踪关联决策/实体
+- **主动记忆引导** — `autoRemember` 开启时,`hindsight_remember` 引导模型主动识别并保存可持久复用的事实(偏好/决策/约束),"不确定先问"防脏数据
+- **热配置** — `endpoint` / `token` / `bankId` / 超时 / `autoRemember`,改完即时生效,无需重启
+- **部署诊断** — `hindsight_status` 连不上时返回具体诊断 + Docker 一键启动引导
+- **独立 client** — `HindsightClient` 是零依赖 HTTP 层(`health` `recall` `list` `listBanks` `stats` `graph` `related` `remember` `forget`),插件之外也能复用
 
 ## 安装
 
@@ -51,14 +54,32 @@ dsh --profile web
 | `defaultRecallLimit` | `10` | 每次召回上限 |
 | `requestTimeoutMs` | `15000` | 数据面请求超时 |
 | `healthTimeoutMs` | `5000` | 健康探测超时 |
+| `autoRemember` | `true` | 会话中引导模型主动保存可持久事实(写前会先问) |
 
 环境变量/用户设置优先于 bundle 默认值。token 不写进提交的配置。
+
+## 还没有 Hindsight?零基础起步
+
+本插件把 DSH 桥接到一个已有的 Hindsight 服务。**你还没有?** 用官方 Docker 镜像 ~1 分钟拉起(需要一个 `OPENAI_API_KEY`):
+
+```sh
+docker run -it --pull always --name hindsight --restart unless-stopped \
+  -p 8888:8888 -p 9999:9999 -e HINDSIGHT_API_LLM_API_KEY=$OPENAI_API_KEY \
+  -v hindsight-data:/home/hindsight/.pg0 ghcr.io/vectorize-io/hindsight:latest
+```
+
+- API 监听 `http://localhost:8888`(本插件默认读取的地址)。
+- 从控制面板 `http://localhost:9999` 创建名为 `hermes` 的 memory bank,或在设置里把 `bankId` 改成你自己的。
+- `hindsight_status` 在服务不可达 / bank 缺失时会返回具体诊断和上面的启动命令,首次运行失败也会直接告诉你该怎么做。
+
+官方文档:https://hindsight.vectorize.io/developer/installation
 
 ## 用法
 
 ```text
 /hindsight status               # bank 统计、记忆/连接/文档数
 /hindsight recall 记忆架构决策   # 语义召回,显示文本 + ID
+/hindsight related <ID> [depth] # 遍历知识图谱邻居(1-5 跳)
 /hindsight list                 # 最近记忆
 /hindsight remember 记住X        # 入队异步结构化提取
 /hindsight forget <ID>          # 软删除(作废)一条记忆
@@ -74,7 +95,7 @@ pnpm build        # tsdown:lib/index.js + index.d.ts + sourcemap
 node scripts/test-client.mjs   # 对运行中的 Hindsight 做真实集成测试
 ```
 
-`scripts/test-client.mjs` 命中真实 Hindsight 端点(health/stats/listBanks/recall/list/remember/forget)。**remember→recall 可见性有个要说明的坑**:Hindsight 通过自己的 LLM/consolidation 队列异步提取,刚 `remember` 的事实可能要超过测试窗口才出现在召回里——这是 Hindsight 自身的环境性依赖,不是插件问题。
+`scripts/test-client.mjs` 命中真实 Hindsight 端点(health/stats/listBanks/recall/list/graph/related/remember/forget/diagnose),15 项契约全绿。**remember→recall 可见性有个要说明的坑**:Hindsight 通过自己的 LLM/consolidation 队列异步提取,刚 `remember` 的事实可能要超过测试窗口才出现在召回里——这是 Hindsight 自身的环境性依赖,不是插件问题。
 
 ## 范围
 
