@@ -19,6 +19,8 @@ export interface HindsightConfig {
   requestTimeoutMs?: number
   /** Timeout for cheap health probes (ms). */
   healthTimeoutMs?: number
+  /** Prompt hindsight_remember to actively recommend saving durable facts (default true). */
+  autoRemember?: boolean
 }
 
 /** One recall result normalized from Hindsight's variable response shapes. */

@@ -89,11 +89,15 @@
 - [ ] README 加"零基础起步"(无 Hindsight 怎么办)
 - [ ] WebSearch 确认 Hindsight 官方 Docker 镜像名(Q-002)
 
-### 6-D auto-remember 半自动（SCOPE-010 / REQ-006 / P1）
-- [ ] 会话结束事件钩子,提炼候选(不 spawn 子 agent)
-- [ ] 半自动确认后再 remember(护栏:不写敏感/临时)
-- [ ] Config 加 `autoRemember`(默认 true 半自动)
-- [ ] 集成测试: autoRemember on/off 行为
+### 6-D auto-remember 主动记忆（SCOPE-010 / REQ-006 / P1）
+> 务实路线(用户拍板):纯 Host 插件无 LLM 通道+无 client UI,不实现会话结束自动提炼/确认弹窗。改成「hindsight_remember 工具主动引导 + autoRemember 配置开关」。
+- [x] 决策:不依赖 turn/end 会话事件、不 spawn 子 agent、不引 client UI(已确认 DSH 会话事件 13 种+turn/end 可用,但不走自动触发)
+- [x] Config 加 `autoRemember`(默认 true,index/Config/resolve/createClient)
+- [x] HindsightConfig 接口加 autoRemember
+- [x] hindsight_remember 工具描述改为主动引导(识别持久事实+不确定先问)
+- [x] cordis.patch.yml 加 autoRemember 默认
+- [ ] Spec REQ-006 重写为务实版 + CHANGELOG 记录(待做)
+- [ ] 集成测试:autoRemember 默认值断言(待做)
 
 ### 发布
 - [ ] 隐私审计 + 集成测试扩至 related/auto-remember

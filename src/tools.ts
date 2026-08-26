@@ -123,10 +123,10 @@ export function registerHindsightTools(ctxTools: ToolRuntime, resolve: () => Hin
 
   ctxTools.register(defineTool({
     name: 'hindsight_remember',
-    description: 'Commit content to Hindsight for asynchronous structured memory extraction (stored as world/experience/observation with entities). Use when the user explicitly asks to remember something durable.',
+    description: 'Commit a durable, reusable fact to Hindsight for asynchronous structured memory extraction (stored as world/experience/observation with entities). Call it proactively whenever the conversation surfaces something the user will want to rely on later — key preferences, project decisions, recurring constraints, an ID/endpoint/version. It is not for ephemeral or transient content. When in doubt whether it is durable enough, ask the user a one-line "记住这个吗?" instead of auto-committing.',
     parameters: {
-      content: { type: 'string', required: true, description: 'The fact to commit.' },
-      context: { type: 'string', description: 'Optional context/source label, e.g. "user-preference".' },
+      content: { type: 'string', required: true, description: 'The durable fact to commit (a complete statement, not a fragment).' },
+      context: { type: 'string', description: 'Optional context/source label, e.g. "user-preference" or "project-decision".' },
     },
     output: { schema: JSON_OUTPUT, render: renderText },
     async execute(args: { content: string; context?: string }, exec) {

@@ -233,7 +233,7 @@ Agent 在下一步模型调用里直接用记忆。
 
 **行为：**
 - `ctx.settings.register(settingsNamespace('hindsight'), Config, {base, applies:'live'})`。
-- Config 字段:endpoint(default http://localhost:8888)、token(默认 '')、bankId(默认 hermes)、defaultRecallLimit(10)、requestTimeoutMs(15000)、healthTimeoutMs(5000)、autoRemember(默认 true,半自动)。
+- Config 字段:endpoint(default http://localhost:8888)、token(默认 '')、bankId(默认 hermes)、defaultRecallLimit(10)、requestTimeoutMs(15000)、healthTimeoutMs(5000)、autoRemember(默认 true,D/主动记忆引导)。
 - package.json 声明 `dsh.bundle.patch: ./cordis.patch.yml`,bundle 层 insert 默认配置行。
 
 **规则：**
@@ -261,7 +261,7 @@ Agent 在下一步模型调用里直接用记忆。
   - 端口不通 → 提示"Hindsight 未在 {endpoint} 运行",附 Docker one-liner。
   - 通但 bank 404 → 提示"bank {bankId} 不存在",引导创建。
   - 通且健康 → 正常统计。
-- Docker one-liner(供引导文案):`docker run -d -p 8888:8888 vectorizeio/hindsight`(最终镜像名以 Hindsight 官方文档为准,写入 README 快速起步)。
+- Docker one-liner(供引导文案,镜像名已 WebSearch 核对官方安装文档):`docker run -it --pull always --name hindsight --restart unless-stopped -p 8888:8888 -p 9999:9999 -e HINDSIGHT_API_LLM_API_KEY=$OPENAI_API_KEY -v hindsight-data:/home/hindsight/.pg0 ghcr.io/vectorize-io/hindsight:latest`
 
 **规则：**
 - MUST 引导文案可执行(用户能复制即跑)。
@@ -272,30 +272,28 @@ Agent 在下一步模型调用里直接用记忆。
 - [ ] AC-001(B): Given Hindsight 端口不通,when 调 status,then 返回 {healthy:false, error, hint} 且 hint 含"docker run"。
 - [ ] AC-002(B): Given bank 不存在,when 调 status,then 错误含具体 bankId 提示。
 
-### REQ-006：auto-remember 会话钩子（D/0.2.0）
+### REQ-006：auto-remember 主动记忆（D/0.2.0）
 
 **优先级：** P1
 **关联任务：** TASK-002
 
 **用途：**
-让"记住"成为 DSH 本能。会话结束时提炼值得长期记忆的事实,半自动确认后写入。
+把"记住"做成模型对话里的**主动习惯**：模型在对话中识别出值得长期依赖的事实(用户偏好、项目决策、反复出现的约束、ID/端点/版本),主动用 `hindsight_remember` 提交,而不是等用户显式说"记住"。纯 Host 插件无 LLM 通道与 client UI,故不实现会话结束自动提炼/确认弹窗;以显式工具引导 + `autoRemember` 开关达成"记忆本能"。
 
 **行为：**
-- 监听 DSH 会话流程结束事件(`conversation.chat` 类 finish)。
-- 本轮对话中值得长期记的事实提炼成 1-3 条候选(轻量:直接让模型提炼,不 spawn 子 agent)。
-- 默认半自动:进程返回候选 + "要存吗?",用户确认后调 `hindsight_remember`。
-- `autoRemember: true` 且用户确认 → 写;`false` → 不触发。
+- `hindsight_remember` 工具描述明确引导:出现可持久复用的关键事实时应**主动**提交;并提示"不确定是否足够持久时,先用一句话问用户'记住这个吗?'再决定",保住半自动的主权感。
+- `autoRemember` 配置(默认 true)控制工具描述是否载入主动引导;设 false 时行为退回"仅用户显式要求才记"(0.1.0 原状)。
 
 **规则：**
-- MUST 默认半自动(用户确认才写),因 Hindsight 库已有 failed 噪音,全自动会加剧污染。
-- MUST 不提炼敏感/临时级内容(如"今天天气","帮我看下这个"),护栏在提炼提示里写明。
-- MUST 遵守现有红线:不写违反用户红线的内容。
-- SHOULD 候选去重(避免重复写同一条)。
+- MUST 不提交临时/瞬态内容(如"今天天气")——描述护栏明确"不是 ephemeral/transient content"。
+- MUST 不自动承诺写违反用户红线的记忆。
+- MUST `autoRemember` 默认 true,`applies: 'live'` 配置改动即时生效。
+- MUST 实现为纯工具行为 + 配置开关,**不依赖 turn/end 会话事件、不 spawn 子 agent、不引入 client UI**。
 
 **验收标准：**
-- [ ] AC-001(D): Given autoRemember=true 且一轮值得记的对话结束,then 提炼出候选并请求确认。
-- [ ] AC-002(D): Given 用户确认,then 调 remember 入队并返回 operationId。
-- [ ] AC-003(D): Given autoRemember=false,then 会话结束不触发提炼。
+- [ ] AC-001(D): Given 默认配置,then `autoRemember` 为 true,且 `hindsight_remember` 描述含主动引导语。
+- [ ] AC-002(D): Given 配置 `autoRemember=false`,then 工具描述不含主动引导语(或等效降级)。
+- [ ] AC-003(D): Given 调 `hindsight_remember`,then 返回 {action:'stored', operationId}(已实现,0.1.0)。
 
 ---
 

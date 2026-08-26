@@ -39,6 +39,9 @@ async function main() {
   const health = await client.health()
   check('health()', health === true, JSON.stringify(health))
 
+  // 1a. D/0.2.0 autoRemember default true (createClient default).
+  check('autoRemember() default', client['config'].autoRemember === true, `autoRemember=${client['config'].autoRemember}`)
+
   // 1b. B/0.2.0 diagnose: reachable bank → healthy; unreachable port → hint.
   try {
     const dx = await client.diagnose()

@@ -28,6 +28,8 @@ export interface HindsightPluginConfig {
   defaultRecallLimit?: number
   requestTimeoutMs?: number
   healthTimeoutMs?: number
+  /** Whether hindsight_remember actively prompts the model to save durable facts (default true). */
+  autoRemember?: boolean
 }
 
 export const Config = z.object({
@@ -37,6 +39,7 @@ export const Config = z.object({
   defaultRecallLimit: z.number().default(10),
   requestTimeoutMs: z.number().default(15_000),
   healthTimeoutMs: z.number().default(5_000),
+  autoRemember: z.boolean().default(true),
 })
 
 export const name = 'dsh-hindsight'
@@ -51,6 +54,7 @@ export function createClient(config: HindsightPluginConfig, bankId?: string, tok
     defaultRecallLimit: config.defaultRecallLimit ?? 10,
     requestTimeoutMs: config.requestTimeoutMs ?? 15_000,
     healthTimeoutMs: config.healthTimeoutMs ?? 5_000,
+    autoRemember: config.autoRemember ?? true,
   })
 }
 
@@ -73,6 +77,7 @@ export function apply(rawContext: unknown, baseConfig: HindsightPluginConfig = {
       defaultRecallLimit: value.defaultRecallLimit ?? 10,
       requestTimeoutMs: value.requestTimeoutMs ?? 15_000,
       healthTimeoutMs: value.healthTimeoutMs ?? 5_000,
+      autoRemember: value.autoRemember ?? true,
     }
   }
 

@@ -12,3 +12,4 @@
         defaultRecallLimit: 10
         requestTimeoutMs: 15000
         healthTimeoutMs: 5000
+        autoRemember: true

@@ -24,10 +24,10 @@
 **决策记录**
 - A：related 让模型传 depth(1-5),工具描述加防滥用护栏。
 - B：先做轻量 Docker one-liner 引导(X 方案),不做 `hindsight_setup` 自动部署命令(Y 方案暂缓,OUT-006)。
-- D：半自动默认(写完问确认),因 Hindsight 库已有 failed=164 噪音,全自动会加剧污染。配 autoRemember 开关。
+- D：~~半自动默认(写完问确认)~~ → **务实路线修正(用户拍板 2026-08-26)**：排查发现纯 Host 插件无 LLM 通道自动提炼、无 client UI 做半自动确认弹窗。收敛为「`hindsight_remember` 工具描述主动引导(识别持久事实+不确定先问) + `autoRemember` 配置开关(默认 true)」,不依赖 turn/end 会话事件、不 spawn 子 agent。替代原 Spec 的计划 1:自动提炼+确认。现有 3892 已含 failed 噪音,故保留「不确定先问用户」的护栏防脏数据。
 
 **待确认**
-- Q-002：Hindsight 官方 Docker 镜像准确名称(B 引导文案用),release 前 WebSearch 确认。
+- Q-002：Hindsight 官方 Docker 镜像准确名称 —— **已解决**(WebSearch 核对官方安装文档,镜像 `ghcr.io/vectorize-io/hindsight:latest`,已用于 HINDSIGHT_SETUP_HINT 与 README)。
 
 ---
 
