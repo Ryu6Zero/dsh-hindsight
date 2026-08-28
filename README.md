@@ -21,6 +21,8 @@ DSH Agent 默认无状态——每次会话都从零开始。已有的记忆方�
 - **记忆引导注入 system prompt** — `systemPromptSection` 开启时,模型从第一轮就知道自己有长期记忆、何时该召回/保存(官方 section provider 形态)
 - **异步操作可观测** — `hindsight_operations` / `/hindsight operations`:查看记忆提取队列状态,"刚存的记住了吗"不再靠猜
 - **批量去重写入** — `hindsight_condense`:一次提交 2-10 条事实,自动跳过与近期记忆重复的内容(文本归一化保守查重)
+- **召回缓存** — 相同查询 60s 内秒回(`recallCacheTtlMs` 可调,0 关闭),写操作即时失效
+- **多库只读探索** — 只读工具支持 `bank` 参数 / 命令支持 `@库名` 前缀,可跨项目库检索;写入始终走默认库防误写
 - **热配置** — `endpoint` / `token` / `bankId` / 超时 / `autoRemember`,改完即时生效,无需重启
 - **部署诊断** — `hindsight_status` 连不上时返回具体诊断 + Docker 一键启动引导
 - **独立 client** — `HindsightClient` 是零依赖 HTTP 层(`health` `recall` `list` `listBanks` `stats` `graph` `related` `operations` `remember` `forget`),插件之外也能复用
@@ -61,6 +63,7 @@ dsh --profile web
 | `healthTimeoutMs` | `5000` | 健康探测超时 |
 | `autoRemember` | `true` | 会话中引导模型主动保存可持久事实(写前会先问) |
 | `systemPromptSection` | `true` | 向 system prompt 注入记忆引导段(模型开局即知有记忆) |
+| `recallCacheTtlMs` | `60000` | 召回缓存 TTL 毫秒(0 = 关闭缓存) |
 
 环境变量/用户设置优先于 bundle 默认值。token 不写进提交的配置。
 

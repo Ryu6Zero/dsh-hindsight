@@ -11,9 +11,11 @@ import { HindsightClient, HINDSIGHT_SETUP_HINT, type HindsightConfig } from './h
 import { registerCommands } from './commands.ts'
 import { registerHindsightTools } from './tools.ts'
 import { registerMemorySection } from './section.ts'
+import { RecallCache } from './cache.ts'
 
 // Re-export useful pieces for consumers/tests.
 export { HindsightClient, HINDSIGHT_SETUP_HINT } from './hindsight.ts'
+export { RecallCache } from './cache.ts'
 export type { HindsightConfig } from './hindsight.ts'
 
 /**
@@ -34,6 +36,8 @@ export interface HindsightPluginConfig {
   autoRemember?: boolean
   /** Register a system-prompt section so the model knows it has memory from turn one (default true). */
   systemPromptSection?: boolean
+  /** In-process recall cache TTL in ms (default 60000; 0 disables caching). */
+  recallCacheTtlMs?: number
 }
 
 export const Config = z.object({
@@ -45,6 +49,7 @@ export const Config = z.object({
   healthTimeoutMs: z.number().default(5_000),
   autoRemember: z.boolean().default(true),
   systemPromptSection: z.boolean().default(true),
+  recallCacheTtlMs: z.number().default(60_000),
 })
 
 export const name = 'dsh-hindsight'
@@ -86,8 +91,12 @@ export function apply(rawContext: unknown, baseConfig: HindsightPluginConfig = {
     }
   }
 
+  // In-process recall cache (REQ-010). TTL read live so config changes apply
+  // without restart; TTL=0 makes every get/set a no-op (0.3.0 behavior).
+  const cache = new RecallCache(() => (settings.get() ?? {}).recallCacheTtlMs ?? 60_000)
+
   // Slash commands owned by the conversation surface.
-  registerCommands(ctx, () => resolve())
+  registerCommands(ctx, () => resolve(), cache)
 
   // System-prompt section: the model knows it has memory from turn one.
   // Read the toggle live so flipping the setting updates on the next apply
@@ -97,5 +106,5 @@ export function apply(rawContext: unknown, baseConfig: HindsightPluginConfig = {
   }
 
   // Model tools callable in the next agent step.
-  registerHindsightTools(ctx.tools, () => resolve())
+  registerHindsightTools(ctx.tools, { resolve, cache })
 }

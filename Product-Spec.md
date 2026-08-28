@@ -417,7 +417,7 @@ Agent 在下一步模型调用里直接用记忆。
 
 **验收标准：**
 - [ ] AC-001: Given 存在另一 bank,when hindsight_recall 传 bank=该库,then 返回该库结果(与默认库不同)。
-- [ ] AC-002: Given 不存在的 bank,then 返回含 404 的错误提示,不 throw 裸异常。
+- [ ] AC-002: Given 不存在的 bank,then recall 返回空结果且 bankId 回显正确(实测 Hindsight 对未知 bank 返回 200 空而非 404,宽松语义);工具结果 hint 提示"空结果可能是 bank 名拼错"。
 - [ ] AC-003: Given /hindsight recall @<bank> <query>,then 命中指定库。
 - [ ] AC-004: hindsight_remember 无 bank 参数(确认写入面不受影响)。
 

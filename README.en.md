@@ -21,6 +21,8 @@ DSH agents are stateless by default — every session starts empty. Existing mem
 - **System-prompt memory section** — with `systemPromptSection` on, the model knows it has long-term memory from turn one (official section-provider shape)
 - **Async observability** — `hindsight_operations` exposes the extraction queue: "did what I just saved land?" is answerable
 - **Batch dedup writes** — `hindsight_condense` commits 2-10 facts at once, skipping ones that duplicate recent memories (conservative text-normalized matching)
+- **Recall cache** — identical queries within 60s are served from an in-process cache (`recallCacheTtlMs`, 0 disables); writes invalidate immediately
+- **Multi-bank read** — read-only tools accept a `bank` override (commands use `@bank` prefix) for cross-project exploration; writes always target the default bank
 - **Live settings** — `endpoint` / `token` / `bankId` / timeouts / `autoRemember`, applied without restart
 - **Setup diagnosis** — `hindsight_status` returns a specific diagnosis plus the Docker one-liner when the server is unreachable
 - **Standalone client** — `HindsightClient` is a dependency-free HTTP layer (`health`, `recall`, `list`, `listBanks`, `stats`, `graph`, `related`, `operations`, `remember`, `forget`), reusable outside the plugin

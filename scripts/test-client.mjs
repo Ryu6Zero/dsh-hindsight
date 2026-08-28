@@ -146,6 +146,45 @@ async function main() {
     check('condense()', false, e.message)
   }
 
+  // 5e. recall cache (A/0.4.0) — second identical query served from cache.
+  try {
+    const { RecallCache } = await import('../lib/index.js')
+    const ttlCache = new RecallCache(() => 60_000)
+    const q = `cache-probe-${Date.now()}`
+    const bank = client['config'].bankId
+    const t0 = Date.now()
+    const first = await client.recall(q, undefined, 5)
+    ttlCache.set(bank, q, 5, first)
+    const t1 = Date.now()
+    const hit = ttlCache.get(bank, q, 5)
+    const t2 = Date.now()
+    check('cache() hit', hit !== undefined && hit.cached === true && (t2 - t1) < 50, `hit=${hit !== undefined} net=${t2 - t1}ms (fresh net=${t1 - t0}ms)`)
+    // write invalidation
+    ttlCache.invalidateBank(bank)
+    check('cache() invalidate', ttlCache.get(bank, q, 5) === undefined, 'invalidated after write')
+    // TTL=0 disabled
+    const off = new RecallCache(() => 0)
+    off.set(bank, q, 5, first)
+    check('cache() ttl=0 disabled', off.get(bank, q, 5) === undefined, 'no caching when ttl=0')
+  } catch (e) {
+    check('cache()', false, e.message)
+  }
+
+  // 5f. multi-bank read (B/0.4.0) — recall against the dedicated test bank.
+  try {
+    const r0 = await client.recall('probe', undefined, 5)           // default bank (hermes)
+    const other = createClient({ endpoint: URL, bankId: 'dsh-hindsight-test-bank' })
+    const r1 = await other.recall('probe', undefined, 5)
+    check('multi-bank() recall', r1.results.length === 0, `other-bank hits=${r1.results.length} (empty bank), default hits=${r0.results.length}`)
+    // unknown bank → Hindsight returns 200-empty (permissive, verified 2026-08-28);
+    // assert empty + no crash, tool layer adds a typo hint.
+    const ghost = createClient({ endpoint: URL, bankId: 'no-such-bank-xyz' })
+    const rg = await ghost.recall('probe', undefined, 5)
+    check('multi-bank() unknown-bank-empty', rg.results.length === 0, 'unknown bank returns empty (200), no crash')
+  } catch (e) {
+    check('multi-bank', false, e.message)
+  }
+
   // 6. roundtrip: remember -> forget (uses a unique marker so we never touch user data).
   //    Hindsight extracts asynchronously through its LLM channel, so poll briefly
   //    instead of asserting the write is visible instantly.

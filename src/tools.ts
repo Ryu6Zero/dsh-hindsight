@@ -2,11 +2,17 @@ import type { ToolRuntime, JsonValue } from '@deepseek-ai/dsh-tools'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { HindsightConfig, Insight } from './hindsight.ts'
 import { HindsightClient, HINDSIGHT_SETUP_HINT } from './hindsight.ts'
+import type { RecallCache } from './cache.ts'
 
 const JSON_OUTPUT = { type: 'object', additionalProperties: true } as const
 
 /** Canonical tool result must be a JSON object. */
 type JsonObj = Record<string, JsonValue>
+
+export interface ToolEnv {
+  resolve: () => HindsightConfig
+  cache?: RecallCache
+}
 
 function renderText(_args: unknown, value: unknown): Array<{ type: 'text'; text: string }> {
   return [{
@@ -30,7 +36,29 @@ function toInsightJson(item: { id: string; text: string; category?: string; scor
   }
 }
 
-export function registerHindsightTools(ctxTools: ToolRuntime, resolve: () => HindsightConfig): void {
+export function registerHindsightTools(ctxTools: ToolRuntime, env: ToolEnv): void {
+  const resolve = env.resolve
+  // REQ-010: recall goes through the TTL cache; writes invalidate the bank.
+  const cachedRecall = async (query: string, signal?: AbortSignal, limit?: number, bankOverride?: string): Promise<{ result: Awaited<ReturnType<HindsightClient['recall']>>; bankId: string; cached: boolean }> => {
+    const cfg = resolve()
+    const bankId = bankOverride ?? cfg.bankId
+    const client = new HindsightClient({ ...cfg, bankId })
+    const effLimit = limit ?? cfg.defaultRecallLimit ?? 10
+    if (env.cache !== undefined) {
+      const hit = env.cache.get(bankId, query, effLimit)
+      if (hit !== undefined) return { result: hit.result, bankId, cached: true }
+    }
+    const result = await client.recall(query, signal, limit)
+    if (env.cache !== undefined) env.cache.set(bankId, query, effLimit, result)
+    return { result, bankId, cached: false }
+  }
+  // REQ-011: read-only tools may override the bank per call; writes stay on the
+  // configured default bank to prevent misdirected writes.
+  const clientForRead = (bankOverride?: string): HindsightClient => {
+    const cfg = resolve()
+    return bankOverride === undefined ? new HindsightClient(cfg) : new HindsightClient({ ...cfg, bankId: bankOverride })
+  }
+  const clientForWrite = (): HindsightClient => new HindsightClient(resolve())
   ctxTools.register(defineTool({
     name: 'hindsight_status',
     description: 'Check Hindsight memory-server health, bank statistics, or diagnose a broken setup. When the server is unreachable, returns a setup hint with the Docker one-liner. Use when a memory operation fails or the user asks about memory health.',
@@ -70,7 +98,7 @@ export function registerHindsightTools(ctxTools: ToolRuntime, resolve: () => Hin
 
   ctxTools.register(defineTool({
     name: 'hindsight_recall',
-    description: 'Recall bounded semantic evidence from the configured Hindsight bank when the current task needs project or session history. Use focused natural-language queries; results are ranked by relevance and capped.',
+    description: 'Recall bounded semantic evidence from a Hindsight memory bank when the current task needs project or session history. Use focused natural-language queries; results are ranked by relevance and capped. Repeated identical queries within a short window are served from cache (marked cached:true).',
     parameters: {
       query: {
         type: 'string', required: true,
@@ -80,18 +108,27 @@ export function registerHindsightTools(ctxTools: ToolRuntime, resolve: () => Hin
         type: 'integer',
         description: 'Maximum number of results (1-10, default 5).',
       },
+      bank: {
+        type: 'string',
+        description: 'Optional memory-bank id override (read-only exploration); leave empty to use the configured default bank.',
+      },
     },
     output: { schema: JSON_OUTPUT, render: renderText },
-    async execute(args: { query: string; limit?: number }, exec) {
-      const client = new HindsightClient(resolve())
-      const limit = args.limit == null ? 5 : Math.max(1, Math.min(10, Math.trunc(args.limit)))
-      const result = await client.recall(args.query, exec.signal, limit)
+    async execute(args: { query: string; limit?: number; bank?: string }, exec): Promise<JsonObj> {
+      const { result, bankId, cached } = await cachedRecall(args.query, exec.signal, args.limit == null ? undefined : Math.max(1, Math.min(10, Math.trunc(args.limit))), args.bank === undefined || args.bank.trim() === '' ? undefined : args.bank.trim())
+      // Hindsight returns 200-empty for unknown banks (permissive semantics);
+      // a custom-bank empty result is more likely a typo than a genuinely empty bank.
+      const typoHint = args.bank !== undefined && args.bank.trim() !== '' && result.results.length === 0
+        ? ' Empty result with a custom bank may mean the bank id is misspelled — verify it exists before retrying.'
+        : ''
       return {
         query: args.query,
+        bankId,
+        cached,
         total: result.results.length,
         results: result.results.map(toInsightJson),
-        hint: 'Results are bounded evidence. Answer from them; run one more focused recall only if exact history is still missing.',
-      } satisfies JsonObj
+        hint: 'Results are bounded evidence. Answer from them; run one more focused recall only if exact history is still missing.' + typoHint,
+      }
     },
   }))
 
@@ -102,10 +139,14 @@ export function registerHindsightTools(ctxTools: ToolRuntime, resolve: () => Hin
       query: { type: 'string', description: 'Optional keyword filter; empty lists recent memories.' },
       limit: { type: 'integer', description: 'Maximum results (1-200, default 20).' },
       state: { type: 'string', enum: ['valid', 'invalidated'], description: 'Memory lifecycle state (default valid).' },
+      bank: {
+        type: 'string',
+        description: 'Optional memory-bank id override (read-only exploration); leave empty for the default bank.',
+      },
     },
     output: { schema: JSON_OUTPUT, render: renderText },
-    async execute(args: { query?: string; limit?: number; state?: 'valid' | 'invalidated' }, exec) {
-      const client = new HindsightClient(resolve())
+    async execute(args: { query?: string; limit?: number; state?: 'valid' | 'invalidated'; bank?: string }, exec): Promise<JsonObj> {
+      const client = clientForRead(args.bank === undefined || args.bank.trim() === '' ? undefined : args.bank.trim())
       const result = await client.list(
         exec.signal,
         args.limit == null ? 20 : Math.max(1, Math.min(200, Math.trunc(args.limit))),
@@ -129,15 +170,16 @@ export function registerHindsightTools(ctxTools: ToolRuntime, resolve: () => Hin
       context: { type: 'string', description: 'Optional context/source label, e.g. "user-preference" or "project-decision".' },
     },
     output: { schema: JSON_OUTPUT, render: renderText },
-    async execute(args: { content: string; context?: string }, exec) {
-      const client = new HindsightClient(resolve())
+    async execute(args: { content: string; context?: string }, exec): Promise<JsonObj> {
+      const client = clientForWrite()
       const receipt = await client.remember(args.content, args.context ?? 'dsh-hindsight', exec.signal)
+      env.cache?.invalidateBank(resolve().bankId)
       return {
         action: 'stored',
         operationId: receipt.operationId,
         summary: 'Hindsight queued the content for structured memory extraction.',
         bankId: resolve().bankId,
-      } satisfies JsonObj
+      }
     },
   }))
 
@@ -148,14 +190,15 @@ export function registerHindsightTools(ctxTools: ToolRuntime, resolve: () => Hin
       id: { type: 'string', required: true, description: 'Exact memory id returned by hindsight_recall or hindsight_list.' },
     },
     output: { schema: JSON_OUTPUT, render: renderText },
-    async execute(args: { id: string }, exec) {
-      const client = new HindsightClient(resolve())
+    async execute(args: { id: string }, exec): Promise<JsonObj> {
+      const client = clientForWrite()
       const receipt = await client.forget(args.id, exec.signal)
+      env.cache?.invalidateBank(resolve().bankId)
       return {
         action: receipt.action,
         id: args.id,
         summary: receipt.action === 'not-found' ? 'No memory with that id.' : 'Memory invalidated (soft delete).',
-      } satisfies JsonObj
+      }
     },
   }))
 
@@ -165,10 +208,14 @@ export function registerHindsightTools(ctxTools: ToolRuntime, resolve: () => Hin
     parameters: {
       id: { type: 'string', required: true, description: 'Exact memory id from hindsight_recall/hindsight_list.' },
       depth: { type: 'integer', description: 'Traversal depth (1-5, default 2).' },
+      bank: {
+        type: 'string',
+        description: 'Optional memory-bank id override (read-only exploration); leave empty for the default bank.',
+      },
     },
     output: { schema: JSON_OUTPUT, render: renderText },
-    async execute(args: { id: string; depth?: number }, exec) {
-      const client = new HindsightClient(resolve())
+    async execute(args: { id: string; depth?: number; bank?: string }, exec): Promise<JsonObj> {
+      const client = clientForRead(args.bank === undefined || args.bank.trim() === '' ? undefined : args.bank.trim())
       const depth = args.depth == null ? 2 : Math.max(1, Math.min(5, Math.trunc(args.depth)))
       const nodes = await client.related(args.id, depth, exec.signal)
       return {
@@ -186,10 +233,14 @@ export function registerHindsightTools(ctxTools: ToolRuntime, resolve: () => Hin
     description: 'List recent Hindsight async operations (memory extraction/consolidation queue) with status, progress and errors. Use it to answer "did what I just saved actually land?" or to diagnose memory-write issues.',
     parameters: {
       limit: { type: 'integer', description: 'Maximum operations to list (1-100, default 20).' },
+      bank: {
+        type: 'string',
+        description: 'Optional memory-bank id override (read-only exploration); leave empty for the default bank.',
+      },
     },
     output: { schema: JSON_OUTPUT, render: renderText },
-    async execute(args: { limit?: number }, exec) {
-      const client = new HindsightClient(resolve())
+    async execute(args: { limit?: number; bank?: string }, exec): Promise<JsonObj> {
+      const client = clientForRead(args.bank === undefined || args.bank.trim() === '' ? undefined : args.bank.trim())
       const limit = args.limit == null ? 20 : Math.max(1, Math.min(100, Math.trunc(args.limit)))
       const operations = await client.operations(exec.signal, limit)
       return {
@@ -229,7 +280,7 @@ export function registerHindsightTools(ctxTools: ToolRuntime, resolve: () => Hin
           reason: 'hindsight_condense needs 2-10 facts; use hindsight_remember for a single fact.',
         }
       }
-      const client = new HindsightClient(resolve())
+      const client = clientForWrite()
       const capped = facts.slice(0, 10)
       const normalize = (s: string): string => s.replace(/\s+/gu, '').replace(/[！!？?，,。.:：;；"“”'']/gu, '').toLowerCase()
       // Dedup against the most recent memories only: condense handles facts
@@ -258,6 +309,7 @@ export function registerHindsightTools(ctxTools: ToolRuntime, resolve: () => Hin
           failed.push({ content: fact, error: err instanceof Error ? err.message : String(err) })
         }
       }
+      if (stored.length > 0) env.cache?.invalidateBank(resolve().bankId)
       const result: JsonObj = {
         submitted: capped.length,
         stored,

@@ -2,8 +2,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type { HindsightConfig } from './hindsight.ts'
 import { HindsightClient, HINDSIGHT_SETUP_HINT } from './hindsight.ts'
+import type { RecallCache } from './cache.ts'
 
-const USAGE = '用法：/hindsight [status|recall <查询>|related <ID> [depth]|list [查询]|operations [数量]|remember <内容>|forget <ID>]'
+const USAGE = '用法：/hindsight [status|recall [@库] <查询>|related [@库] <ID> [depth]|list [@库] [查询]|operations [@库] [数量]|remember <内容>|forget <ID>]'
 
 function error(text: string): CommandResult {
   return { kind: 'error', text: `${text}\n${USAGE}` }
@@ -31,7 +32,33 @@ function splitInput(rawInput: string): { verb: string; argument: string } {
     : { verb: input.slice(0, separator).toLowerCase(), argument: input.slice(separator).trim() }
 }
 
-export function registerCommands(ctx: Context, resolve: () => HindsightConfig): void {
+export function registerCommands(ctx: Context, resolve: () => HindsightConfig, cache?: RecallCache): void {
+  // REQ-011: read-only subcommands accept a `@bankId` prefix on their argument.
+  const parseArg = (raw: string): { bank?: string; argument: string } => {
+    if (raw.startsWith('@')) {
+      const sp = raw.indexOf(' ')
+      if (sp > 1) return { bank: raw.slice(1, sp), argument: raw.slice(sp + 1).trim() }
+      return { bank: raw.slice(1), argument: '' }
+    }
+    return { argument: raw }
+  }
+  const clientForRead = (bank?: string): HindsightClient => {
+    const cfg = resolve()
+    return bank === undefined ? new HindsightClient(cfg) : new HindsightClient({ ...cfg, bankId: bank })
+  }
+  const cachedRecall = async (query: string, signal?: AbortSignal, bank?: string) => {
+    const cfg = resolve()
+    const bankId = bank ?? cfg.bankId
+    const client = clientForRead(bank)
+    const limit = cfg.defaultRecallLimit ?? 10
+    if (cache !== undefined) {
+      const hit = cache.get(bankId, query, limit)
+      if (hit !== undefined) return hit.result
+    }
+    const result = await client.recall(query, signal, limit)
+    if (cache !== undefined) cache.set(bankId, query, limit, result)
+    return result
+  }
   ctx.commands.register({
     name: 'hindsight',
     description: 'Query or write Hindsight memory. Subcommands: status, recall <query>, related <ID> [depth], list [query], operations [limit], remember <content>, forget <ID>.',
@@ -63,33 +90,37 @@ export function registerCommands(ctx: Context, resolve: () => HindsightConfig): 
           }
         }
         case 'recall': {
-          if (argument === '') return error('recall 需要一个明确查询。')
-          const result = await client.recall(argument, invocation.signal)
-          if (result.results.length === 0) return { kind: 'success', text: `没有找到与“${argument}”相关的记忆。` }
+          const { bank, argument: q } = parseArg(argument)
+          if (q === '') return error('recall 需要一个明确查询(可用 @库 前缀指定 bank)。')
+          const result = await cachedRecall(q, invocation.signal, bank)
+          if (result.results.length === 0) return { kind: 'success', text: `没有找到与“${q}”相关的记忆。` }
           return { kind: 'success', text: `召回 ${result.results.length} 条：\n\n${result.results.map(insightLine).join('\n\n')}` }
         }
         case 'related': {
-          if (argument === '') return error('related 需要 recall/list 返回的完整记忆 ID。')
-          const space = argument.indexOf(' ')
-          const id = space < 0 ? argument : argument.slice(0, space)
-          const depthRaw = space < 0 ? undefined : argument.slice(space + 1).trim()
+          const { bank, argument: arg1 } = parseArg(argument)
+          if (arg1 === '') return error('related 需要 recall/list 返回的完整记忆 ID。')
+          const space = arg1.indexOf(' ')
+          const id = space < 0 ? arg1 : arg1.slice(0, space)
+          const depthRaw = space < 0 ? undefined : arg1.slice(space + 1).trim()
           if (depthRaw !== undefined) {
             const n = Number(depthRaw)
             if (!Number.isInteger(n) || n < 1 || n > 5) return error('depth 需为 1-5 的整数。')
           }
-          const nodes = await client.related(id, depthRaw === undefined ? 2 : Number(depthRaw), invocation.signal)
+          const nodes = await clientForRead(bank).related(id, depthRaw === undefined ? 2 : Number(depthRaw), invocation.signal)
           if (nodes.length === 0) return { kind: 'success', text: `ID ${id} 的 ${depthRaw === undefined ? 2 : Number(depthRaw)} 跳内没有关联记忆。` }
           return { kind: 'success', text: `关联记忆 ${nodes.length} 条（depth=${depthRaw === undefined ? 2 : Number(depthRaw)}）：\n\n${nodes.map(insightLine).join('\n\n')}` }
         }
         case 'list': {
-          const result = await client.list(invocation.signal, 20, argument, 'valid')
-          if (result.length === 0) return { kind: 'success', text: argument === '' ? '当前没有有效记忆。' : `没有匹配“${argument}”的记忆。` }
+          const { bank, argument: q } = parseArg(argument)
+          const result = await clientForRead(bank).list(invocation.signal, 20, q, 'valid')
+          if (result.length === 0) return { kind: 'success', text: q === '' ? '当前没有有效记忆。' : `没有匹配“${q}”的记忆。` }
           return { kind: 'success', text: `记忆 ${result.length} 条：\n\n${result.map(insightLine).join('\n\n')}` }
         }
         case 'operations': {
-          const n = argument === '' ? 20 : Number(argument)
+          const { bank, argument: arg1 } = parseArg(argument)
+          const n = arg1 === '' ? 20 : Number(arg1)
           if (!Number.isInteger(n) || n < 1 || n > 100) return error('operations 的数量需为 1-100 的整数。')
-          const ops = await client.operations(invocation.signal, n)
+          const ops = await clientForRead(bank).operations(invocation.signal, n)
           if (ops.length === 0) return { kind: 'success', text: '最近没有异步操作。' }
           const lines = ops.map((op, i) => {
             const meta = [

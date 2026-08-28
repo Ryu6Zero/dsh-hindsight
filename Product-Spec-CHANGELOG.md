@@ -16,6 +16,7 @@
 - 缓存仅限 recall: graph/related/list/operations 是动态数据不缓存。
 - 多 bank 只做只读覆盖: 写入面(remember/condense/forget)保持默认 bank, 防止模型误写错库。
 - 缓存 key 含 bankId, 与 REQ-011 天然兼容。
+- 实测修正(2026-08-28): Hindsight 对不存在的 bank recall 返回 200 空结果而非 404(宽松语义), AC-002 相应改为「空结果 + hint 防呆提示」, 不虚构 404。
 
 ## 0.3.0 (2026-08-28)
 
