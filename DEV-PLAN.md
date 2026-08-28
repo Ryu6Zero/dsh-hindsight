@@ -109,26 +109,25 @@
 **目标：** A(system prompt section 记忆引导) + B(operations 可观测) + C(condense 批量去重)。
 **完成标准：** Spec REQ-007/008/009 全 AC 通过,发 0.3.0。
 
-### 7-A section provider（REQ-007 / P0）
-- [ ] Config 加 `systemPromptSection`(默认 true)
-- [ ] inject 加 'systemPrompt' + 副作用导入 dsh-system-prompt
-- [ ] 注册 PromptSection{name:'hindsight-memory', order:130, 静态引导文案}
-- [ ] headless 冒烟:模型知道自己有长期记忆
+### 7-A section provider（REQ-007 / P0）✅
+- [x] Config 加 `systemPromptSection`(默认 true)
+- [x] inject 加 'systemPrompt' + 副作用导入 dsh-system-prompt
+- [x] 注册 PromptSection{name:'hindsight-memory', order:130, 静态引导文案}(src/section.ts)
+- [x] headless 冒烟:模型自知有长期记忆(registry 0.3.0 实测:"系统提示告知我拥有跨会话记忆")
 
-### 7-B operations 可观测（REQ-008 / P0）
-- [ ] client.operations(limit?) 归一化 OperationRecord
-- [ ] hindsight_operations 工具(bounded, error_message 截 300)
-- [ ] /hindsight operations [limit] 子命令
-- [ ] 集成测试: operations(5) + 刚 remember 后可见
+### 7-B operations 可观测（REQ-008 / P0）✅
+- [x] client.operations(limit?) 归一化 OperationRecord(注意端点是 /operations 非 /memories/operations,实测修正)
+- [x] hindsight_operations 工具(bounded, error_message 截 300)
+- [x] /hindsight operations [limit] 子命令
+- [x] 集成测试: operations(5) → statuses=processing,pending,completed
 
-### 7-C condense 批量去重（REQ-009 / P1）
-- [ ] client 层不新增(condense 编排在工具层组合 list+remember)
-- [ ] hindsight_condense 工具(facts 2-10, 文本归一化查重, 部分失败隔离)
-- [ ] 集成测试: 重复/新增混合提交 + 零残留
+### 7-C condense 批量去重（REQ-009 / P1）✅
+- [x] hindsight_condense 工具(facts 2-10, 近期20条窗口文本归一化查重, 部分失败隔离)
+- [x] 集成测试: dedup=1/stored=2 验证
 
-### 发布
-- [ ] 版本 0.3.0 + README(中英)特性更新 + 隐私审计
-- [ ] npm publish + registry 验证 + headless 真机冒烟
+### 发布 ✅
+- [x] 版本 0.3.0 + README(中英)特性更新 + 隐私审计全绿
+- [x] npm publish 0.3.0 + registry 验证(latest: 0.3.0) + headless 真机冒烟通过
 
 ## 阶段审查记录
 
