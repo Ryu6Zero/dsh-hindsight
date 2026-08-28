@@ -1,63 +1,68 @@
 # dsh-hindsight
 
-**Official-grade DeepSeek Harness memory plugin backed by [Hindsight](https://github.com/vectorize-io/hindsight).**
+[English](./README.en.md) | **简体中文**
 
-Give your DSH agent real cross-session memory: recall past decisions, remember new facts, inspect memory health — through a self-contained Cordis plugin. No dsh-mnemon, no orchestrator, no bundled storage engine. Just a thin HTTP client over the Hindsight REST API your server already exposes.
+**官方级 DeepSeek Harness 记忆插件，后端对接 [Hindsight](https://github.com/vectorize-io/hindsight)。**
 
-## Why
+给 DSH Agent 真正的跨会话记忆:召回过去的决策、记住新事实、查看记忆健康状况——通过一个自包含的 Cordis 插件完成。没有 dsh-mnemon、没有编排层、没有捆绑存储引擎。就是一层对接 Hindsight REST API 的轻薄 HTTP client。
 
-DSH agents are stateless by default — every session starts empty. Existing memory tooling (e.g. dsh-mnemon) is a heavyweight three-tier orchestration bundle. If you already run [Hindsight](https://hindsight.vectorize.io) (a high-quality vector memory engine with entity resolution + knowledge graph + multi-strategy retrieval), this plugin connects DSH to it directly, in a single installable package.
+## 为什么
 
-**Confirmed working end-to-end:** a live DSH agent calling `hindsight_recall` retrieved real memories from a Hindsight bank in a headless profile.
+DSH Agent 默认无状态——每次会话都从零开始。已有的记忆方案(如 dsh-mnemon)是重型的"三层编排全家桶"。如果你本就部署了 [Hindsight](https://hindsight.vectorize.io)(高质量向量记忆引擎,带实体解析 + 知识图谱 + 多策略检索),这个插件把 DSH 直接接上去,一个可安装的包就够。
 
-## Features
+**已实测端到端跑通**:一个真实 DSH Agent 调用 `hindsight_recall`,在 headless profile 里从 Hindsight bank 召回真实记忆。
 
-- **`/hindsight` slash command** — `status` / `recall <query>` / `list [query]` / `remember <content>` / `forget <ID>`
-- **5 model tools** — `hindsight_status`, `hindsight_recall`, `hindsight_list`, `hindsight_remember`, `hindsight_forget` (callable by the agent in the next step)
-- **Live settings** — `endpoint` / `token` / `bankId` / timeouts, applied without restart
-- **Standalone client** — `HindsightClient` is a dependency-free HTTP layer (`health`, `recall`, `list`, `listBanks`, `stats`, `remember`, `forget`), reusable outside the plugin
+## 特性
 
-## Install
+- **`/hindsight` 斜杠命令** — `status` / `recall <查询>` / `related <ID> [depth]` / `list [查询]` / `remember <内容>` / `forget <ID>`
+- **6 个模型工具** — `hindsight_status` `hindsight_recall` `hindsight_related` `hindsight_list` `hindsight_remember` `hindsight_forget`(Agent 下一步可直接调用)
+- **知识图谱遍历** — `hindsight_related`:从一条记忆出发,BFS 遍历 Hindsight 实体关系图谱的邻居(1-5 跳),追踪关联决策/实体
+- **主动记忆引导** — `autoRemember` 开启时,`hindsight_remember` 引导模型主动识别并保存可持久复用的事实(偏好/决策/约束),"不确定先问"防脏数据
+- **热配置** — `endpoint` / `token` / `bankId` / 超时 / `autoRemember`,改完即时生效,无需重启
+- **部署诊断** — `hindsight_status` 连不上时返回具体诊断 + Docker 一键启动引导
+- **独立 client** — `HindsightClient` 是零依赖 HTTP 层(`health` `recall` `list` `listBanks` `stats` `graph` `related` `remember` `forget`),插件之外也能复用
 
-Requires Node ≥ 20 and DeepSeek Harness ≥ 0.1.1-rc.2.
+## 安装
 
-Add to the Web profile (full UI) and the Headless profile (CLI tasks) — they mount the same tools:
+要求 Node ≥ 20,DeepSeek Harness ≥ 0.1.1-rc.2。
+
+装到 Web profile(完整 UI)和 Headless profile(命令行任务)——两者挂载同一套工具:
 
 ```sh
-# npm registry (once published)
+# npm registry(发布后)
 dsh plugin --profile web add dsh-hindsight
 dsh plugin --profile headless add dsh-hindsight
 
-# or a local development checkout
-dsh plugin --profile web add "link:/absolute/path/to/dsh-hindsight"
-dsh plugin --profile headless add "link:/absolute/path/to/dsh-hindsight"
+# 或本地开发目录
+dsh plugin --profile web add "link:/绝对/路径/dsh-hindsight"
+dsh plugin --profile headless add "link:/绝对/路径/dsh-hindsight"
 ```
 
-Then start/restart the profile:
+然后启动/重启 profile:
 
 ```sh
 dsh --profile web
 ```
 
-## Configure
+## 配置
 
-The default points at `http://localhost:8888`, bank `hermes`. Override per profile or globally via user settings (never edit the bundle patch): the DSH settings surface shows a `hindsight` namespace with:
+默认指向 `http://localhost:8888`、bank `hermes`。在 DSH 设置界面的 `hindsight` 命名空间里覆盖(别改 bundle patch):
 
-| Field | Default | Meaning |
+| 字段 | 默认 | 含义 |
 |---|---|---|
-| `endpoint` | `http://localhost:8888` | Hindsight server base URL |
-| `token` | `''` | Bearer token for remote servers; leave empty for local open servers |
-| `bankId` | `hermes` | Memory bank id |
-| `defaultRecallLimit` | `10` | Max results per recall |
-| `requestTimeoutMs` | `15000` | Data-plane request timeout |
-| `healthTimeoutMs` | `5000` | Health probe timeout |
-| `autoRemember` | `true` | Suggest durable facts to save at session end (semi-auto: asks before writing) |
+| `endpoint` | `http://localhost:8888` | Hindsight 服务地址 |
+| `token` | `''` | 远程服务的 Bearer token;本地开放服务留空 |
+| `bankId` | `hermes` | 记忆 bank id |
+| `defaultRecallLimit` | `10` | 每次召回上限 |
+| `requestTimeoutMs` | `15000` | 数据面请求超时 |
+| `healthTimeoutMs` | `5000` | 健康探测超时 |
+| `autoRemember` | `true` | 会话中引导模型主动保存可持久事实(写前会先问) |
 
-Environment/user settings take precedence over the bundle defaults. Tokens are kept out of checked-in config.
+环境变量/用户设置优先于 bundle 默认值。token 不写进提交的配置。
 
-## Zero-install: no Hindsight yet?
+## 还没有 Hindsight?零基础起步
 
-This plugin bridges DSH to an existing Hindsight server. **You don't have one?** Stand up the official Docker image in ~1 minute (needs an `OPENAI_API_KEY`):
+本插件把 DSH 桥接到一个已有的 Hindsight 服务。**你还没有?** 用官方 Docker 镜像 ~1 分钟拉起(需要一个 `OPENAI_API_KEY`):
 
 ```sh
 docker run -it --pull always --name hindsight --restart unless-stopped \
@@ -65,42 +70,42 @@ docker run -it --pull always --name hindsight --restart unless-stopped \
   -v hindsight-data:/home/hindsight/.pg0 ghcr.io/vectorize-io/hindsight:latest
 ```
 
-- API server listens on `http://localhost:8888` (what this plugin reads by default).
-- Create a memory bank named `hermes` from the control panel at `http://localhost:9999`, or set `bankId` in settings to your own bank.
-- `hindsight_status` reports a helpful setup hint (including the commands above) whenever the server is unreachable or the bank is missing, so a failed first run tells you exactly what to do.
+- API 监听 `http://localhost:8888`(本插件默认读取的地址)。
+- 从控制面板 `http://localhost:9999` 创建名为 `hermes` 的 memory bank,或在设置里把 `bankId` 改成你自己的。
+- `hindsight_status` 在服务不可达 / bank 缺失时会返回具体诊断和上面的启动命令,首次运行失败也会直接告诉你该怎么做。
 
-Official docs: https://hindsight.vectorize.io/developer/installation
+官方文档:https://hindsight.vectorize.io/developer/installation
 
-## Usage
+## 用法
 
 ```text
-/hindsight status                 # bank stats, memory/link/doc counts
-/hindsight recall 记忆架构决策     # semantic recall, shows text + ID
-/hindsight related <ID> [depth]   # traverse knowledge-graph neighbors (1-5 hops)
-/hindsight list                   # recent memories
-/hindsight remember 记住X          # queue content for async extraction
-/hindsight forget <ID>            # soft-delete (invalidate) one memory
+/hindsight status               # bank 统计、记忆/连接/文档数
+/hindsight recall 记忆架构决策   # 语义召回,显示文本 + ID
+/hindsight related <ID> [depth] # 遍历知识图谱邻居(1-5 跳)
+/hindsight list                 # 最近记忆
+/hindsight remember 记住X        # 入队异步结构化提取
+/hindsight forget <ID>          # 软删除(作废)一条记忆
 ```
 
-The agent can do all of the above on its own in a conversation via the model tools — just ask it to "check memory" or "remember that...".
+在对话里直接让 Agent 做这些也行——它通过模型工具「查一下记忆」「记住这个」即可自己完成。
 
-## Build & test
+## 构建与测试
 
 ```sh
 pnpm install
-pnpm build        # tsdown: lib/index.js + index.d.ts + sourcemap
-node scripts/test-client.mjs   # real integration tests against a running Hindsight
+pnpm build        # tsdown:lib/index.js + index.d.ts + sourcemap
+node scripts/test-client.mjs   # 对运行中的 Hindsight 做真实集成测试
 ```
 
-`scripts/test-client.mjs` hits real Hindsight endpoints (health/stats/listBanks/recall/list/remember/forget). Remember→recall visibility has a **totally valid caveat**: Hindsight extracts asynchronously through its own LLM/consolidation queue, so a freshly `remember`ed fact may take longer than the test window to appear in recall — that's an environmental dependency of Hindsight itself, not the plugin.
+`scripts/test-client.mjs` 命中真实 Hindsight 端点(health/stats/listBanks/recall/list/graph/related/remember/forget/diagnose),15 项契约全绿。**remember→recall 可见性有个要说明的坑**:Hindsight 通过自己的 LLM/consolidation 队列异步提取,刚 `remember` 的事实可能要超过测试窗口才出现在召回里——这是 Hindsight 自身的环境性依赖,不是插件问题。
 
-## Scope
+## 范围
 
-This is a **lightweight standalone plugin**, deliberately not a dsh-mnemon replacement:
+这是**轻量独立插件**,特意不是 dsh-mnemon 的替代:
 
-- ✅ In scope: Hindsight REST client + slash commands + model tools + live settings.
-- ❌ Out of scope: WebUI workbench, multi-provider orchestration, bundled storage, client/browser bundle, extraction/distillation sub-agents.
+- ✅ 范围內:Hindsight REST client + 斜杠命令 + 模型工具 + 热配置。
+- ❌ 范围外:WebUI 工作台、多 provider 编排、捆绑存储、client/浏览器 bundle、提取/蒸馏子 Agent。
 
 ## License
 
-MIT. See [LICENSE](./LICENSE).
+MIT。见 [LICENSE](./LICENSE)。
