@@ -129,6 +129,25 @@
 - [x] 版本 0.3.0 + README(中英)特性更新 + 隐私审计全绿
 - [x] npm publish 0.3.0 + registry 验证(latest: 0.3.0) + headless 真机冒烟通过
 
+## Phase 8 · 0.4.0 迭代（⬜ 进行中）
+
+**目标：** A(recall 会话内 TTL 缓存) + B(多 bank 只读覆盖)。
+**完成标准：** REQ-010/011 全 AC 通过,发 0.4.0。
+
+### 8-A recall 缓存（REQ-010 / P1）
+- [ ] Config 加 `recallCacheTtlMs`(默认 60000)
+- [ ] 缓存 Map + 写失效 + 上限淘汰(index.ts 作用域)
+- [ ] 工具命中返回 cached:true
+- [ ] 集成测试: 二次命中 <10ms + remember 后失效 + TTL=0 直连
+
+### 8-B 多 bank 只读（REQ-011 / P1）
+- [ ] 只读四工具加可选 bank 参数
+- [ ] 命令 @bankId 前缀解析
+- [ ] 集成测试: 跨 bank recall + 不存在 bank 404 透传
+
+### 发布
+- [ ] 版本 0.4.0 + README 更新 + 审计 + npm publish + 真机冒烟
+
 ## 阶段审查记录
 
 - **凭据脱敏(hard won)**：`*_API_KEY` 风格 env 赋值会被写盘脱敏成 `***`,连源码都改坏。对策=配置以 `token` 命名,彻底绕开触发模式。

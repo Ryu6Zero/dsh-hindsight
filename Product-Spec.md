@@ -1,6 +1,6 @@
 # 产品需求规范：dsh-hindsight
 
-> 版本：0.3.0（迭代中）。历史：0.2.0 已发布（A 图谱/B 诊断/D 主动记忆 + 中文主 README）。0.3.0 引入 A(system prompt section)、B(operations 可观测)、C(condense 批量去重)。
+> 版本：0.4.0（迭代中）。历史：0.3.0 已发布（A section/B operations/C condense,真机验收全绿+零残留）。0.4.0 引入 A(recall 缓存)、B(多 bank 只读覆盖)。
 
 ## 0. AI 使用说明
 
@@ -367,6 +367,59 @@ Agent 在下一步模型调用里直接用记忆。
 - [ ] AC-001: Given facts 含 1 条与库内重复 + 2 条新内容,then 返回 duplicates=1, stored=2。
 - [ ] AC-002: Given facts=1 条,then 返回 usage 提示(改用 hindsight_remember)。
 - [ ] AC-003: 集成测试跑完后 bank 无 dsh-hindsight-test 残留。
+
+### REQ-010：recall 会话内缓存（A/0.4.0）
+
+**优先级：** P1
+**关联任务：** TASK-001
+
+**用途：**
+同一会话内重复相同查询每次都打 Hindsight(实测 0.3-0.6s)。加进程内 TTL 缓存,重复查询秒回,降低延迟与后端压力。
+
+**行为：**
+- 插件 apply 作用域内维护 `Map<cacheKey, {expires, result}>`。
+- cacheKey = `bankId + '\u0000' + normalize(query) + '\u0000' + limit`;normalize = 去空白+小写。
+- TTL 60s(配置 `recallCacheTtlMs`,默认 60000,0 = 禁用)。
+- **写失效**：remember/forget/condense 成功后清空该 bank 的全部缓存条目。
+- 仅缓存 recall(只读);graph/related/list/operations 不缓存(图谱与队列是动态的)。
+- 命中时返回结果 + `cached: true` 标记(工具层),便于调试。
+
+**规则：**
+- MUST 纯内存,不持久化,进程重启即清(无跨会话污染)。
+- MUST 缓存上限 100 条,超限按插入序淘汰最旧。
+- MUST TTL=0 时行为与 0.3.0 完全一致(直连)。
+- MUST 写操作后缓存立即失效,不允许读到写前快照。
+
+**验收标准：**
+- [ ] AC-001: Given TTL=60000,同 query 调两次 recall,第二次命中缓存(耗时 <10ms,结果一致,含 cached:true)。
+- [ ] AC-002: Given recall 后紧接 remember 同 bank,再同 query recall,then 不返回旧缓存。
+- [ ] AC-003: Given recallCacheTtlMs=0,then 无缓存行为(与 0.3.0 等价)。
+
+### REQ-011：多 bank 只读覆盖（B/0.4.0）
+
+**优先级：** P1
+**关联任务：** TASK-001/003
+
+**用途：**
+支持「项目隔离记忆」:用户可能有多个 bank(如 hermes=个人、<project>=某项目)。只读工具支持调用级 bank 覆盖,探索跨库;写入类保持默认 bank,防误写。
+
+**行为：**
+- `hindsight_recall` / `hindsight_list` / `hindsight_related` / `hindsight_operations` 四个只读工具加可选参数 `bank`(string,缺省用配置 bankId)。
+- `/hindsight recall|list|related|operations` 命令支持 `@<bankId>` 前缀语法(如 `/hindsight recall @project-x 查询词`)。
+- 写入类工具(remember/condense/forget/status)**不加** bank 参数。
+- 覆盖 bank 不存在时返回 404 透传错误,引导检查 bank 名。
+
+**规则：**
+- MUST 只读四工具才有 bank 覆盖,写入类 MUST NOT 有。
+- MUST 缓存 key 含 bankId(REQ-010),不同 bank 不串缓存。
+- MUST 覆盖仅影响本次调用,不改全局配置。
+- SHOULD 工具描述写明"bank 可选,留空用默认库"。
+
+**验收标准：**
+- [ ] AC-001: Given 存在另一 bank,when hindsight_recall 传 bank=该库,then 返回该库结果(与默认库不同)。
+- [ ] AC-002: Given 不存在的 bank,then 返回含 404 的错误提示,不 throw 裸异常。
+- [ ] AC-003: Given /hindsight recall @<bank> <query>,then 命中指定库。
+- [ ] AC-004: hindsight_remember 无 bank 参数(确认写入面不受影响)。
 
 ---
 

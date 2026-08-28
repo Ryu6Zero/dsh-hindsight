@@ -4,6 +4,19 @@
 
 ---
 
+## 0.4.0 (2026-08-28)
+
+**方向**：A(recall 会话内缓存) + B(多 bank 只读覆盖)。
+
+**新增范围**
+- REQ-010(A)：进程内 TTL 缓存(Map, 默认 60s, 上限100条, TTL=0禁用), 写操作全失效, 命中标 cached:true。
+- REQ-011(B)：只读四工具(recall/list/related/operations)加可选 bank 参数; 命令支持 @bankId 前缀; 写入类不加防误写。
+
+**决策记录**
+- 缓存仅限 recall: graph/related/list/operations 是动态数据不缓存。
+- 多 bank 只做只读覆盖: 写入面(remember/condense/forget)保持默认 bank, 防止模型误写错库。
+- 缓存 key 含 bankId, 与 REQ-011 天然兼容。
+
 ## 0.3.0 (2026-08-28)
 
 **方向**：A(system prompt section 记忆引导) + B(operations 异步可观测) + C(condense 批量去重写入)。
