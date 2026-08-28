@@ -1,6 +1,6 @@
 import type { ToolRuntime, JsonValue } from '@deepseek-ai/dsh-tools'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { HindsightConfig } from './hindsight.ts'
+import type { HindsightConfig, Insight } from './hindsight.ts'
 import { HindsightClient, HINDSIGHT_SETUP_HINT } from './hindsight.ts'
 
 const JSON_OUTPUT = { type: 'object', additionalProperties: true } as const
@@ -178,6 +178,94 @@ export function registerHindsightTools(ctxTools: ToolRuntime, resolve: () => Hin
         results: nodes.map(toInsightJson),
         hint: 'These are graph neighbors of the memory. Use when connection/entity context is needed; answer from them without re-traversing this turn.',
       } satisfies JsonObj
+    },
+  }))
+
+  ctxTools.register(defineTool({
+    name: 'hindsight_operations',
+    description: 'List recent Hindsight async operations (memory extraction/consolidation queue) with status, progress and errors. Use it to answer "did what I just saved actually land?" or to diagnose memory-write issues.',
+    parameters: {
+      limit: { type: 'integer', description: 'Maximum operations to list (1-100, default 20).' },
+    },
+    output: { schema: JSON_OUTPUT, render: renderText },
+    async execute(args: { limit?: number }, exec) {
+      const client = new HindsightClient(resolve())
+      const limit = args.limit == null ? 20 : Math.max(1, Math.min(100, Math.trunc(args.limit)))
+      const operations = await client.operations(exec.signal, limit)
+      return {
+        bankId: resolve().bankId,
+        total: operations.length,
+        operations: operations.map((op): JsonObj => ({
+          id: op.id,
+          taskType: op.taskType,
+          status: op.status,
+          ...(op.itemsCount === undefined ? {} : { itemsCount: op.itemsCount }),
+          ...(op.progress === undefined ? {} : { progress: op.progress }),
+          ...(op.retryCount === undefined ? {} : { retryCount: op.retryCount }),
+          ...(op.errorMessage === undefined ? {} : { errorMessage: op.errorMessage }),
+          ...(op.updatedAt === undefined ? {} : { updatedAt: op.updatedAt }),
+        })),
+        hint: 'status: queued/processing means still extracting; completed means landed; failed shows errorMessage.',
+      } satisfies JsonObj
+    },
+  }))
+
+  ctxTools.register(defineTool({
+    name: 'hindsight_condense',
+    description: 'Batch-commit 2-10 durable facts to Hindsight with automatic duplicate skipping (normalized-text match against existing memories). Use when a conversation produced several distinct durable facts at once; for a single fact use hindsight_remember. Decide relevance yourself first — the dedup here is conservative text matching, not semantic.',
+    parameters: {
+      facts: {
+        type: 'array',
+        required: true,
+        description: '2-10 complete durable fact statements to commit.',
+      },
+    },
+    output: { schema: JSON_OUTPUT, render: renderText },
+    async execute(args: { facts: string[] }, exec): Promise<JsonObj> {
+      const facts = Array.isArray(args.facts) ? args.facts.filter((f): f is string => typeof f === 'string' && f.trim() !== '') : []
+      if (facts.length < 2) {
+        return {
+          action: 'rejected',
+          reason: 'hindsight_condense needs 2-10 facts; use hindsight_remember for a single fact.',
+        }
+      }
+      const client = new HindsightClient(resolve())
+      const capped = facts.slice(0, 10)
+      const normalize = (s: string): string => s.replace(/\s+/gu, '').replace(/[！!？?，,。.:：;；"“”'']/gu, '').toLowerCase()
+      // Dedup against the most recent memories only: condense handles facts
+      // produced in the current conversation, so overlaps live in the recent
+      // window. Text-normalized containment match; semantics stay the model's job.
+      let recent: Insight[] = []
+      try {
+        recent = await client.list(exec.signal, 20, undefined, 'valid')
+      } catch { recent = [] }
+      const recentNorms = recent.map((m) => normalize(m.text))
+      const stored: Array<JsonObj> = []
+      const duplicates: string[] = []
+      const failed: Array<JsonObj> = []
+      for (const fact of capped) {
+        const norm = normalize(fact)
+        const isDup = recentNorms.some((mn) => mn === norm || mn.includes(norm) || norm.includes(mn))
+        if (isDup) {
+          duplicates.push(fact)
+          continue
+        }
+        try {
+          const receipt = await client.remember(fact, 'dsh-hindsight-condense', exec.signal)
+          stored.push({ content: fact, operationId: receipt.operationId })
+          recentNorms.push(norm)
+        } catch (err) {
+          failed.push({ content: fact, error: err instanceof Error ? err.message : String(err) })
+        }
+      }
+      const result: JsonObj = {
+        submitted: capped.length,
+        stored,
+        duplicates,
+      }
+      if (failed.length > 0) result.failed = failed
+      result.hint = 'stored entries are queued for async extraction — check hindsight_operations to confirm landing.'
+      return result
     },
   }))
 }

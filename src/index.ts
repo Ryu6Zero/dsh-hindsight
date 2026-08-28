@@ -6,9 +6,11 @@ import type {} from '@deepseek-ai/dsh-settings'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-commands'
+import type {} from '@deepseek-ai/dsh-system-prompt'
 import { HindsightClient, HINDSIGHT_SETUP_HINT, type HindsightConfig } from './hindsight.ts'
 import { registerCommands } from './commands.ts'
 import { registerHindsightTools } from './tools.ts'
+import { registerMemorySection } from './section.ts'
 
 // Re-export useful pieces for consumers/tests.
 export { HindsightClient, HINDSIGHT_SETUP_HINT } from './hindsight.ts'
@@ -30,6 +32,8 @@ export interface HindsightPluginConfig {
   healthTimeoutMs?: number
   /** Whether hindsight_remember actively prompts the model to save durable facts (default true). */
   autoRemember?: boolean
+  /** Register a system-prompt section so the model knows it has memory from turn one (default true). */
+  systemPromptSection?: boolean
 }
 
 export const Config = z.object({
@@ -40,10 +44,11 @@ export const Config = z.object({
   requestTimeoutMs: z.number().default(15_000),
   healthTimeoutMs: z.number().default(5_000),
   autoRemember: z.boolean().default(true),
+  systemPromptSection: z.boolean().default(true),
 })
 
 export const name = 'dsh-hindsight'
-export const inject = ['tools', 'settings', 'commands'] as const
+export const inject = ['tools', 'settings', 'commands', 'systemPrompt'] as const
 
 /** Build a client from resolved settings plus a runtime override bank/token. */
 export function createClient(config: HindsightPluginConfig, bankId?: string, token?: string, endpoint?: string): HindsightClient {
@@ -83,6 +88,13 @@ export function apply(rawContext: unknown, baseConfig: HindsightPluginConfig = {
 
   // Slash commands owned by the conversation surface.
   registerCommands(ctx, () => resolve())
+
+  // System-prompt section: the model knows it has memory from turn one.
+  // Read the toggle live so flipping the setting updates on the next apply
+  // cycle (section follows the plugin fiber lifecycle via its disposer).
+  if ((settings.get() ?? {}).systemPromptSection ?? true) {
+    registerMemorySection(ctx, () => resolve().bankId)
+  }
 
   // Model tools callable in the next agent step.
   registerHindsightTools(ctx.tools, () => resolve())

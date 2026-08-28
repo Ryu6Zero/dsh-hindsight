@@ -78,6 +78,19 @@ export interface ForgetReceipt {
   id: string
 }
 
+/** One async operation record (extraction/consolidation queue) — REQ-008. */
+export interface OperationRecord {
+  id: string
+  taskType: string
+  status: string
+  itemsCount?: number
+  errorMessage?: string
+  retryCount?: number
+  progress?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
 /**
  * Reusable setup guidance (B/0.2.0): the minimal official Docker one-liner to
  * stand up a local Hindsight server. Mirror name verified against
@@ -428,5 +441,48 @@ export class HindsightClient {
     if (res.status === 404) return { action: 'not-found', id }
     if (!res.ok) throw new Error(`Hindsight forget failed: HTTP ${res.status}`)
     return { action: 'invalidated', id }
+  }
+
+  /**
+   * List recent async operations (extraction/consolidation queue) — REQ-008.
+   * Makes the remember→extraction pipeline observable instead of a black box.
+   */
+  async operations(signal?: AbortSignal, limit = 20): Promise<OperationRecord[]> {
+    const capped = Math.max(1, Math.min(limit, 100))
+    const res = await fetchWithTimeout(
+      `${this.bankPath}/operations?limit=${capped}&offset=0`,
+      { method: 'GET', headers: this.headers(), signal },
+      this.config.requestTimeoutMs,
+    )
+    if (!res.ok) throw new Error(`Hindsight operations failed: HTTP ${res.status}`)
+    const payload = asRecord(await res.json()) ?? {}
+    const items = Array.isArray(payload.operations) ? payload.operations : []
+    return items.flatMap((value) => {
+      const rec = asRecord(value)
+      if (rec === undefined) return []
+      const id = jsonText(rec.id)
+      if (id === undefined) return []
+      const progressRec = asRecord(rec.progress)
+      const progress = progressRec === undefined
+        ? undefined
+        : [
+            jsonText(progressRec.stage),
+            jsonNumber(progressRec.processed) !== undefined && jsonNumber(progressRec.total) !== undefined
+              ? `${jsonNumber(progressRec.processed)}/${jsonNumber(progressRec.total)}`
+              : undefined,
+          ].filter((v): v is string => v !== undefined).join(' · ') || undefined
+      const err = jsonText(rec.error_message)
+      return [{
+        id,
+        taskType: jsonText(rec.task_type) ?? 'unknown',
+        status: jsonText(rec.status) ?? 'unknown',
+        ...(jsonNumber(rec.items_count) === undefined ? {} : { itemsCount: jsonNumber(rec.items_count) }),
+        ...(err === undefined ? {} : { errorMessage: err.length > 300 ? `${err.slice(0, 299)}…` : err }),
+        ...(jsonNumber(rec.retry_count) === undefined ? {} : { retryCount: jsonNumber(rec.retry_count) }),
+        ...(progress === undefined ? {} : { progress }),
+        ...(jsonText(rec.created_at) === undefined ? {} : { createdAt: jsonText(rec.created_at)! }),
+        ...(jsonText(rec.updated_at) === undefined ? {} : { updatedAt: jsonText(rec.updated_at)! }),
+      }]
+    })
   }
 }

@@ -14,10 +14,16 @@ DSH agents are stateless by default — every session starts empty. Existing mem
 
 ## Features
 
-- **`/hindsight` slash command** — `status` / `recall <query>` / `list [query]` / `remember <content>` / `forget <ID>`
-- **5 model tools** — `hindsight_status`, `hindsight_recall`, `hindsight_list`, `hindsight_remember`, `hindsight_forget` (callable by the agent in the next step)
-- **Live settings** — `endpoint` / `token` / `bankId` / timeouts, applied without restart
-- **Standalone client** — `HindsightClient` is a dependency-free HTTP layer (`health`, `recall`, `list`, `listBanks`, `stats`, `remember`, `forget`), reusable outside the plugin
+- **`/hindsight` slash command** — `status` / `recall <query>` / `related <ID> [depth]` / `list [query]` / `operations [limit]` / `remember <content>` / `forget <ID>`
+- **8 model tools** — `hindsight_status` `hindsight_recall` `hindsight_related` `hindsight_list` `hindsight_operations` `hindsight_remember` `hindsight_condense` `hindsight_forget` (callable by the agent in the next step)
+- **Knowledge-graph traversal** — `hindsight_related`: BFS over Hindsight's entity graph from one memory id (1-5 hops)
+- **Proactive memory** — with `autoRemember` on, `hindsight_remember` guides the model to proactively capture durable facts (asking first when unsure)
+- **System-prompt memory section** — with `systemPromptSection` on, the model knows it has long-term memory from turn one (official section-provider shape)
+- **Async observability** — `hindsight_operations` exposes the extraction queue: "did what I just saved land?" is answerable
+- **Batch dedup writes** — `hindsight_condense` commits 2-10 facts at once, skipping ones that duplicate recent memories (conservative text-normalized matching)
+- **Live settings** — `endpoint` / `token` / `bankId` / timeouts / `autoRemember`, applied without restart
+- **Setup diagnosis** — `hindsight_status` returns a specific diagnosis plus the Docker one-liner when the server is unreachable
+- **Standalone client** — `HindsightClient` is a dependency-free HTTP layer (`health`, `recall`, `list`, `listBanks`, `stats`, `graph`, `related`, `operations`, `remember`, `forget`), reusable outside the plugin
 
 ## Install
 

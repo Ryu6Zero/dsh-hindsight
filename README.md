@@ -18,9 +18,12 @@ DSH Agent 默认无状态——每次会话都从零开始。已有的记忆方�
 - **6 个模型工具** — `hindsight_status` `hindsight_recall` `hindsight_related` `hindsight_list` `hindsight_remember` `hindsight_forget`(Agent 下一步可直接调用)
 - **知识图谱遍历** — `hindsight_related`:从一条记忆出发,BFS 遍历 Hindsight 实体关系图谱的邻居(1-5 跳),追踪关联决策/实体
 - **主动记忆引导** — `autoRemember` 开启时,`hindsight_remember` 引导模型主动识别并保存可持久复用的事实(偏好/决策/约束),"不确定先问"防脏数据
+- **记忆引导注入 system prompt** — `systemPromptSection` 开启时,模型从第一轮就知道自己有长期记忆、何时该召回/保存(官方 section provider 形态)
+- **异步操作可观测** — `hindsight_operations` / `/hindsight operations`:查看记忆提取队列状态,"刚存的记住了吗"不再靠猜
+- **批量去重写入** — `hindsight_condense`:一次提交 2-10 条事实,自动跳过与近期记忆重复的内容(文本归一化保守查重)
 - **热配置** — `endpoint` / `token` / `bankId` / 超时 / `autoRemember`,改完即时生效,无需重启
 - **部署诊断** — `hindsight_status` 连不上时返回具体诊断 + Docker 一键启动引导
-- **独立 client** — `HindsightClient` 是零依赖 HTTP 层(`health` `recall` `list` `listBanks` `stats` `graph` `related` `remember` `forget`),插件之外也能复用
+- **独立 client** — `HindsightClient` 是零依赖 HTTP 层(`health` `recall` `list` `listBanks` `stats` `graph` `related` `operations` `remember` `forget`),插件之外也能复用
 
 ## 安装
 
@@ -57,6 +60,7 @@ dsh --profile web
 | `requestTimeoutMs` | `15000` | 数据面请求超时 |
 | `healthTimeoutMs` | `5000` | 健康探测超时 |
 | `autoRemember` | `true` | 会话中引导模型主动保存可持久事实(写前会先问) |
+| `systemPromptSection` | `true` | 向 system prompt 注入记忆引导段(模型开局即知有记忆) |
 
 环境变量/用户设置优先于 bundle 默认值。token 不写进提交的配置。
 
@@ -83,6 +87,7 @@ docker run -it --pull always --name hindsight --restart unless-stopped \
 /hindsight recall 记忆架构决策   # 语义召回,显示文本 + ID
 /hindsight related <ID> [depth] # 遍历知识图谱邻居(1-5 跳)
 /hindsight list                 # 最近记忆
+/hindsight operations [数量]     # 最近异步操作状态(提取队列)
 /hindsight remember 记住X        # 入队异步结构化提取
 /hindsight forget <ID>          # 软删除(作废)一条记忆
 ```

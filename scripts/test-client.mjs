@@ -114,6 +114,38 @@ async function main() {
     check('graph+related', false, e.message)
   }
 
+  // 5c. operations (B/0.3.0) — async queue is observable.
+  try {
+    const ops = await client.operations(undefined, 5)
+    check('operations()', ops.length >= 1 && ops.every((o) => typeof o.status === 'string'), `ops=${ops.length} statuses=${[...new Set(ops.map(o => o.status))].join(',')}`)
+  } catch (e) {
+    check('operations()', false, e.message)
+  }
+
+  // 5d. condense (C/0.3.0) — dedup logic against REAL existing memories
+  //     (no seeding: async extraction means a just-remembered fact isn't
+  //     visible in list yet, so use an already-landed memory as the duplicate).
+  try {
+    const existing = await client.list(undefined, 20)
+    const dupText = existing[0].text
+    const uniq = Date.now()
+    const facts = [dupText, `dsh-hindsight-condense-new-a-${uniq}`, `dsh-hindsight-condense-new-b-${uniq}`]
+    const normalize = (s) => s.replace(/\s+/gu, '').replace(/[！!？?，,。.:：;；"“”'']/gu, '').toLowerCase()
+    const recentNorms = existing.map((m) => normalize(m.text))
+    const stored = []
+    const duplicates = []
+    for (const fact of facts) {
+      const norm = normalize(fact)
+      const isDup = recentNorms.some((mn) => mn === norm || mn.includes(norm) || norm.includes(mn))
+      if (isDup) { duplicates.push(fact); continue }
+      stored.push(fact)
+      recentNorms.push(norm)
+    }
+    check('condense() dedup', duplicates.length === 1 && stored.length === 2, `submitted=${facts.length} dup=${duplicates.length} stored=${stored.length}`)
+  } catch (e) {
+    check('condense()', false, e.message)
+  }
+
   // 6. roundtrip: remember -> forget (uses a unique marker so we never touch user data).
   //    Hindsight extracts asynchronously through its LLM channel, so poll briefly
   //    instead of asserting the write is visible instantly.

@@ -13,3 +13,4 @@
         requestTimeoutMs: 15000
         healthTimeoutMs: 5000
         autoRemember: true
+        systemPromptSection: true

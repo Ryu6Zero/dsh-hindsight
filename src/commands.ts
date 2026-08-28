@@ -3,7 +3,7 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import type { HindsightConfig } from './hindsight.ts'
 import { HindsightClient, HINDSIGHT_SETUP_HINT } from './hindsight.ts'
 
-const USAGE = '用法：/hindsight [status|recall <查询>|related <ID> [depth]|list [查询]|remember <内容>|forget <ID>]'
+const USAGE = '用法：/hindsight [status|recall <查询>|related <ID> [depth]|list [查询]|operations [数量]|remember <内容>|forget <ID>]'
 
 function error(text: string): CommandResult {
   return { kind: 'error', text: `${text}\n${USAGE}` }
@@ -34,7 +34,7 @@ function splitInput(rawInput: string): { verb: string; argument: string } {
 export function registerCommands(ctx: Context, resolve: () => HindsightConfig): void {
   ctx.commands.register({
     name: 'hindsight',
-    description: 'Query or write Hindsight memory. Subcommands: status, recall <query>, related <ID> [depth], list [query], remember <content>, forget <ID>.',
+    description: 'Query or write Hindsight memory. Subcommands: status, recall <query>, related <ID> [depth], list [query], operations [limit], remember <content>, forget <ID>.',
     input: { hint: 'recall 用户偏好的开发语言' },
     async handler(invocation: CommandInvocation): Promise<CommandResult> {
       const { verb, argument } = splitInput(invocation.rawInput)
@@ -85,6 +85,24 @@ export function registerCommands(ctx: Context, resolve: () => HindsightConfig): 
           const result = await client.list(invocation.signal, 20, argument, 'valid')
           if (result.length === 0) return { kind: 'success', text: argument === '' ? '当前没有有效记忆。' : `没有匹配“${argument}”的记忆。` }
           return { kind: 'success', text: `记忆 ${result.length} 条：\n\n${result.map(insightLine).join('\n\n')}` }
+        }
+        case 'operations': {
+          const n = argument === '' ? 20 : Number(argument)
+          if (!Number.isInteger(n) || n < 1 || n > 100) return error('operations 的数量需为 1-100 的整数。')
+          const ops = await client.operations(invocation.signal, n)
+          if (ops.length === 0) return { kind: 'success', text: '最近没有异步操作。' }
+          const lines = ops.map((op, i) => {
+            const meta = [
+              op.progress === undefined ? undefined : `progress=${op.progress}`,
+              op.retryCount === undefined ? undefined : `retry=${op.retryCount}`,
+              op.updatedAt === undefined ? undefined : op.updatedAt,
+            ].filter((v): v is string => v !== undefined).join(' · ')
+            const err = op.errorMessage === undefined ? '' : `\n   错误: ${op.errorMessage}`
+            return `${i + 1}. [${op.status}] ${op.taskType} · ${op.id}${meta === '' ? '' : `\n   ${meta}`}${err}`
+          })
+          const failedCount = ops.filter((op) => op.status === 'failed').length
+          const summary = failedCount > 0 ? `（其中 ${failedCount} 条 failed）` : ''
+          return { kind: 'success', text: `最近异步操作 ${ops.length} 条${summary}：\n\n${lines.join('\n')}` }
         }
         case 'remember': {
           if (argument === '') return error('remember 需要要记住的内容。')
