@@ -134,19 +134,19 @@
 **目标：** A(recall 会话内 TTL 缓存) + B(多 bank 只读覆盖)。
 **完成标准：** REQ-010/011 全 AC 通过,发 0.4.0。
 
-### 8-A recall 缓存（REQ-010 / P1）
-- [ ] Config 加 `recallCacheTtlMs`(默认 60000)
-- [ ] 缓存 Map + 写失效 + 上限淘汰(index.ts 作用域)
-- [ ] 工具命中返回 cached:true
-- [ ] 集成测试: 二次命中 <10ms + remember 后失效 + TTL=0 直连
+### 8-A recall 缓存（REQ-010 / P1）✅
+- [x] Config 加 `recallCacheTtlMs`(默认 60000)
+- [x] cache.ts: RecallCache(写失效+100条LRU式淘汰+TTL=0禁用)
+- [x] 工具命中返回 cached:true
+- [x] 集成测试: 命中 0ms vs fresh 303ms + 写失效 + TTL=0 直连(22/22)
 
-### 8-B 多 bank 只读（REQ-011 / P1）
-- [ ] 只读四工具加可选 bank 参数
-- [ ] 命令 @bankId 前缀解析
-- [ ] 集成测试: 跨 bank recall + 不存在 bank 404 透传
+### 8-B 多 bank 只读（REQ-011 / P1）✅
+- [x] 只读四工具加可选 bank 参数
+- [x] 命令 @bankId 前缀解析
+- [x] 集成测试: 跨 bank recall + 未知 bank 空结果(实测修正:Hindsight 宽松语义返回 200 空而非 404,工具加拼写防呆 hint)
 
-### 发布
-- [ ] 版本 0.4.0 + README 更新 + 审计 + npm publish + 真机冒烟
+### 发布 ✅
+- [x] 版本 0.4.0 + README 更新 + 审计 + npm publish(latest 0.4.0) + 真机冒烟(缓存命中/多库透传/防呆hint 全验证) + 测试 bank 清理
 
 ## 阶段审查记录
 
