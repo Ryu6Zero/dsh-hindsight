@@ -1,6 +1,6 @@
 # 产品需求规范：dsh-hindsight
 
-> 版本：0.2.0（迭代中）。历史：0.1.0 已发布（npm + GitHub + 插件商店收录中）。当前迭代引入 A(图谱 related)、B(部署诊断与引导)、D(auto-remember 半自动)。
+> 版本：0.3.0（迭代中）。历史：0.2.0 已发布（A 图谱/B 诊断/D 主动记忆 + 中文主 README）。0.3.0 引入 A(system prompt section)、B(operations 可观测)、C(condense 批量去重)。
 
 ## 0. AI 使用说明
 
@@ -294,6 +294,79 @@ Agent 在下一步模型调用里直接用记忆。
 - [ ] AC-001(D): Given 默认配置,then `autoRemember` 为 true,且 `hindsight_remember` 描述含主动引导语。
 - [ ] AC-002(D): Given 配置 `autoRemember=false`,then 工具描述不含主动引导语(或等效降级)。
 - [ ] AC-003(D): Given 调 `hindsight_remember`,then 返回 {action:'stored', operationId}(已实现,0.1.0)。
+
+### REQ-007：system prompt section 记忆引导（A/0.3.0）
+
+**优先级：** P0
+**关联任务：** TASK-001/002
+
+**用途：**
+补齐官方记忆插件形态(`Memory = section provider + tool`)的后半边。让模型**开局就知道**自己有跨会话记忆、知道何时该召回/保存,而不是碰壁后才翻工具列表。官方挂接点:`ctx.systemPrompt.section(PromptSection)`,工具引导约定 order 100–199。
+
+**行为：**
+- 注册 `PromptSection { name:'hindsight-memory', order:130, text: 静态引导文案 }`。
+- 文案内容:你拥有跨会话长期记忆(Hindsight, bank={bankId});涉及历史/偏好/决策时先 `hindsight_recall`;出现值得长期保存的事实时主动 `hindsight_remember`(不确定先问);可用 `hindsight_related` 追溯关联。
+- `systemPromptSection: true` 配置(默认 true)控制注册与否。
+- inject 数组加 `'systemPrompt'`;副作用导入 `@deepseek-ai/dsh-system-prompt`。
+
+**规则：**
+- MUST 用官方 `ctx.systemPrompt.section()` API(已验证签名),返回的 disposer 交给 Cordis 生命周期。
+- MUST order 遵守官方约定(100-199 工具引导段)。
+- MUST name 唯一(`hindsight-memory`),重复注册会 throw。
+- MUST 文案含 bankId,但不含 token。
+- MUST section 关闭(`systemPromptSection: false`)时行为与 0.2.0 完全一致。
+
+**验收标准：**
+- [ ] AC-001: Given 默认配置,when dsh headless 冒烟,then 模型 system prompt 含记忆引导段(可问模型"你有长期记忆吗"验证)。
+- [ ] AC-002: Given `systemPromptSection: false`,then 无 section 注册,行为同 0.2.0。
+- [ ] AC-003: typecheck 通过,重复 apply 不 throw(section 随 plugin fiber 释放)。
+
+### REQ-008：hindsight_operations 异步可观测（B/0.3.0）
+
+**优先级：** P0
+**关联任务：** TASK-003
+
+**用途：**
+消除 remember 的"异步黑盒"——入队后落地与否全靠猜(Spec ASM-003 的痛)。官方端点 `GET /v1/default/banks/{bank}/operations` 已实测 200,返回 `{operations:[{id, task_type, status, error_message, retry_count, progress, created_at, updated_at}]}`。
+
+**行为：**
+- client 加 `operations(limit?, signal?)`:GET `/memories/operations?limit=N`,归一化 OperationRecord。
+- 新模型工具 `hindsight_operations`:列出最近操作状态(status/completed/failed/progress/error_message),让模型能回答"刚才存的记住了吗"。
+- `/hindsight operations [limit]` 子命令:人类直接看。
+
+**规则：**
+- MUST 默认 limit 20,上限 100。
+- MUST 返回 bounded(每条截断 error_message 至 300 字符)。
+- SHOULD 按 updated_at 降序呈现(端点默认序)。
+
+**验收标准：**
+- [ ] AC-001: Given 真实 8888,when 调 `operations(5)`,then 返回 ≤5 条含 status 字段的记录。
+- [ ] AC-002: Given 刚 remember 过,when 查 operations,then 能看到对应 operation 的 status(queued/processing/completed)。
+- [ ] AC-003: 服务不可达时工具返回 {error} 结构,不 throw。
+
+### REQ-009：hindsight_condense 批量去重写入（C/0.3.0）
+
+**优先级：** P1
+**关联任务：** TASK-002
+
+**用途：**
+治「重复写同一条」脏数据。模型一次提交多条候选事实(如一轮对话的多个要点),插件先按已有记忆查重,只写入新内容。
+
+**行为：**
+- 新模型工具 `hindsight_condense(facts: string[])`:批量提交 2-10 条候选。
+- 内部流程:每条事实用 `list(query=事实关键词, limit=5)` 粗查重(文本相似度归一化比较)→ 重复的跳过 → 新的逐条 `remember`。
+- 返回 `{submitted, stored:[{content, operationId}], duplicates:[content]}`。
+
+**规则：**
+- MUST facts 2-10 条(1 条让模型直接用 hindsight_remember)。
+- MUST 去重是**保守文本归一化**(去空白/全半角统一后精确或前缀匹配),不做语义判断——语义判断是模型的职责,描述里写明"提交前请自行确认每条是否与已知记忆重复"。
+- MUST 每条独立 remember(部分失败不影响其他条)。
+- MUST 单条失败进 `failed` 数组返回,不 throw 整体。
+
+**验收标准：**
+- [ ] AC-001: Given facts 含 1 条与库内重复 + 2 条新内容,then 返回 duplicates=1, stored=2。
+- [ ] AC-002: Given facts=1 条,then 返回 usage 提示(改用 hindsight_remember)。
+- [ ] AC-003: 集成测试跑完后 bank 无 dsh-hindsight-test 残留。
 
 ---
 

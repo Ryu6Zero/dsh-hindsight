@@ -4,6 +4,20 @@
 
 ---
 
+## 0.3.0 (2026-08-28)
+
+**方向**：A(system prompt section 记忆引导) + B(operations 异步可观测) + C(condense 批量去重写入)。
+
+**新增范围**
+- REQ-007(A)：官方记忆形态补全——`ctx.systemPrompt.section()` 注入记忆引导段(order 130, 工具引导约定段),配置 `systemPromptSection`(默认 true)。API 已验证:PromptSection{name, order, text}, 副作用导入 `@deepseek-ai/dsh-system-prompt`。
+- REQ-008(B)：异步黑盒可观测——client.operations() + `hindsight_operations` 工具 + `/hindsight operations` 子命令。端点实测 200:`GET /memories/operations` 返回 status/error_message/progress。
+- REQ-009(C)：批量去重写入——`hindsight_condense(facts[])`,保守文本归一化查重(语义判断留给模型),逐条独立 remember,部分失败不整体 throw。
+
+**决策记录**
+- section 用静态文案而非动态 provider:bankId 变化靠 `applies:'live'` 重载插件生效,无需每次 assembly 求值。
+- operations/condense 是纯 HTTP 增量,不动 0.2.0 任何现有行为。
+- 去重明确为文本归一化保守策略,拒绝做语义相似度——那是模型的职责(工具描述引导模型先自查)。
+
 ## 0.2.0 (2026-08-26)
 
 **方向**：A(图谱 related) + B(部署诊断与引导) + D(auto-remember 半自动)。北极星从"给已有 Hindsight 用户加工具"转为"给想用记忆的 DSH 用户一个带护城河的记忆插件"。

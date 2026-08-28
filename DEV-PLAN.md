@@ -100,8 +100,35 @@
 - [ ] 集成测试:autoRemember 默认值断言(待做)
 
 ### 发布
-- [ ] 隐私审计 + 集成测试扩至 related/auto-remember
-- [ ] npm 发 0.2.0 + GitHub 推送 + 更新 Spec 勾选
+- [x] 隐私审计 + 集成测试扩至 related/auto-remember(15/15)
+- [x] npm 发 0.2.0 + GitHub 推送 + 更新 Spec 勾选
+- [x] 中文主 README + README.en.md(2026-08-27)
+
+## Phase 7 · 0.3.0 迭代（⬜ 进行中）
+
+**目标：** A(system prompt section 记忆引导) + B(operations 可观测) + C(condense 批量去重)。
+**完成标准：** Spec REQ-007/008/009 全 AC 通过,发 0.3.0。
+
+### 7-A section provider（REQ-007 / P0）
+- [ ] Config 加 `systemPromptSection`(默认 true)
+- [ ] inject 加 'systemPrompt' + 副作用导入 dsh-system-prompt
+- [ ] 注册 PromptSection{name:'hindsight-memory', order:130, 静态引导文案}
+- [ ] headless 冒烟:模型知道自己有长期记忆
+
+### 7-B operations 可观测（REQ-008 / P0）
+- [ ] client.operations(limit?) 归一化 OperationRecord
+- [ ] hindsight_operations 工具(bounded, error_message 截 300)
+- [ ] /hindsight operations [limit] 子命令
+- [ ] 集成测试: operations(5) + 刚 remember 后可见
+
+### 7-C condense 批量去重（REQ-009 / P1）
+- [ ] client 层不新增(condense 编排在工具层组合 list+remember)
+- [ ] hindsight_condense 工具(facts 2-10, 文本归一化查重, 部分失败隔离)
+- [ ] 集成测试: 重复/新增混合提交 + 零残留
+
+### 发布
+- [ ] 版本 0.3.0 + README(中英)特性更新 + 隐私审计
+- [ ] npm publish + registry 验证 + headless 真机冒烟
 
 ## 阶段审查记录
 
